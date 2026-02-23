@@ -42,8 +42,8 @@
 
 get_stock_profit_growth_em 
 
-|:---|:---|:---| 
 | 名称 | 类型 | 描述 |
+|:---|:---|:---| 
 | SECUCODE | object | 股票代码(带后缀) |
 | SECURITY_CODE | object | 股票代码 |
 | SECURITY_NAME_ABBR | object | 股票名称 |

@@ -90,14 +90,15 @@ def get_industry_stocks(industry_code):
 
 def get_stock_profit_growth(symbol):
     try:
-        df = ak.stock_financial_analysis_indicator(symbol=symbol)
+        df = ak.stock_financial_analysis_indicator(symbol=symbol, start_year="2022")
         df = df.sort_values("报告期")
         # 最新净利润同比
         growth = float(df.iloc[-1]["净利润同比增长率"])
         return growth
     except Exception as e:
-        logger.warning(f"获取股票盈利增长失败 {symbol}: {e}")
+        logger.warning(f"获取股票盈利增长失败 {symbol}: {e.with_traceback()}")
         return None
+
 
 def industry_earnings_score(industry_code):
     try:
@@ -146,6 +147,9 @@ def run_industry_ranking():
             try:
                 df = get_industry_data(name)
                 score = calculate_industry_score(df, hs300)
+                # 行业盈利增速
+                score = industry_earnings_score(name)
+                logger.info(f"行业盈利增速:{name}={score}")
                 results.append((name, code, score))
                 print(f"{name} 评分完成")
             except Exception as e:
@@ -160,7 +164,6 @@ def run_industry_ranking():
         #     except Exception as e:
         #         logger.error(f"处理行业 {name} 失败: {e}")
         #         continue
-
 
         ranking = pd.DataFrame(results, columns=["行业", "行业名称", "评分"])
         ranking = ranking.sort_values("评分", ascending=False)

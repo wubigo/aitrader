@@ -88,25 +88,46 @@ def get_industry_stocks(industry_code):
         logger.error(f"获取行业成分股失败 {industry_code}: {e}")
         return []
 
-def get_stock_profit_growth(symbol):
+def get_stock_profit_growth_sina(industry_code):
+    """
+    通过sina财经获取股票净利润同比增长率，sina接口可能被封禁
+    :param industry_code:
+    :return:
+    """
     try:
-        df = ak.stock_financial_analysis_indicator(symbol=symbol, start_year="2022")
-        df = df.sort_values("报告期")
+        df = ak.stock_financial_analysis_indicator(symbol=industry_code, start_year="2023")
+        # df = df.sort_values("日期")
         # 最新净利润同比
         growth = float(df.iloc[-1]["净利润同比增长率"])
         return growth
     except Exception as e:
-        logger.warning(f"获取股票盈利增长失败 {symbol}: {e.with_traceback()}")
+        logger.warning(f"获取股票盈利增长失败 {industry_code}: {e.with_traceback()}")
         return None
 
 
+def get_stock_profit_growth_em(industry_code):
+    """
+    通过em财经获取股票净利润同比增长率
+    :param industry_code:
+    :return:
+    """
+    try:
+        df = ak.stock_financial_analysis_indicator_em(symbol=industry_code)
+        df = df[df["REPORT_TYPE"] == "年报"]
+        # df.tail(20)[["TOTALOPERATEREVE", "TOTALOPERATEREVETZ", "KCFJCXSYJLR", "KCFJCXSYJLRTZ"]]
+        # 最新净利润同比
+        growth = float(df.iloc[-1]["扣非净利润同比增长(%)"])
+        return growth
+    except Exception as e:
+        logger.warning(f"获取EM股票盈利增长失败 {symbol}: {e.with_traceback()}")
+        return None
 def industry_earnings_score(industry_code):
     try:
         stocks = get_industry_stocks(industry_code)
         growth_list = []
 
         for s in stocks[:30]:   # 取前30避免过慢
-            g = get_stock_profit_growth(s)
+            g = get_stock_profit_growth_sina(s)
             if g is not None:
                 growth_list.append(g)
 
@@ -148,8 +169,8 @@ def run_industry_ranking():
                 df = get_industry_data(name)
                 score = calculate_industry_score(df, hs300)
                 # 行业盈利增速
-                score = industry_earnings_score(name)
-                logger.info(f"行业盈利增速:{name}={score}")
+                # score = industry_earnings_score(name)
+                # logger.info(f"行业盈利增速:{name}={score}")
                 results.append((name, code, score))
                 print(f"{name} 评分完成")
             except Exception as e:

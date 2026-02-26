@@ -23,8 +23,9 @@ def capital_concentration(symbol="一级行业"):
         # index_analysis_daily_sw_df = ak.index_analysis_daily_sw(symbol, start_date="20260213",
         #                                                         end_date="20260213")
         # print(index_analysis_daily_sw_df[["成交量", "指数名称"]])
-    except Exception as e:
+    except Exception:
         logger.exception("获取行业板块的成交量数据")
+        raise
 
     # industry_turnover = industry_df["amount"].tail(5).mean()
     # ratio = industry_turnover / market_turnover

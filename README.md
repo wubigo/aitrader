@@ -115,6 +115,21 @@ get_stock_profit_growth_em
 
 ## 仓位控制
 
+
+# 因子引擎
+
+## 趋势因子 (Trend Factor)  
+
+## 价值因子 (Value Factor)
+
+## 择股因子 (Select Factor)
+
+## 择时因子 (Select Time Factor)
+
+## 情绪因子 (Emotion Factor)
+
+## 质量因子 (Quality Factor)
+
 ## 动量因子 (Momentum Factor)
 
 ### 核心因子类型

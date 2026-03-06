@@ -115,3 +115,51 @@ get_stock_profit_growth_em
 
 ## 仓位控制
 
+## 动量因子 (Momentum Factor)
+
+### 核心因子类型
+
+```
+简单动量       = (P_t / P_{t-N}) - 1      # N日累计收益率
+对数动量      = ln(P_t / P_{t-N})         # 对数收益率
+时间加权动量   = Σ(weight_i × return_i)   # 指数加权收益率
+相对动量      = Mom_stock - Mom_benchmark # 相对基准超额收益
+风险调整动量   = Mom / Volatility          # 动量/波动率
+加速动量      = Mom_short - Mom_long      # 动量变化率
+行业内动量    = Mom_stock - Mom_industry  # 行业内相对强弱
+```
+
+### 时间周期
+
+| 类型 | 回看天数 | 用途 |
+|:---|:---|:---|
+| 短期动量 | 20日 | 短期趋势交易 |
+| 中期动量 | 60日/120日 | 中频策略 |
+| 长期动量 | 250日 | 长线趋势 |
+
+### 因子预处理
+
+```
+去极值  → MAD法或百分位法
+标准化  → Z-Score或Min-Max
+中性化  → 行业、市值中性化
+```
+
+### 使用示例
+
+```python
+from momentum import MomentumFactor, MomentumFactorProcessor, MomentumSignal
+
+# 计算动量因子
+mf = MomentumFactor(df)
+df_with_momentum = mf.compute_all_momentum()
+
+# 去极值和标准化
+processor = MomentumFactorProcessor()
+cols = ['momentum_20d', 'momentum_60d', 'momentum_120d']
+df_processed = processor.winsorize(df_with_momentum, cols)
+df_processed = processor.standardize(df_processed, cols)
+
+# 生成交易信号
+signal = MomentumSignal.generate_signals(df_processed, 'momentum_60d')
+```

@@ -30,8 +30,8 @@ def get_industry_data(industry_name):
         df = ak.index_hist_sw(symbol=industry_name)
         df = df.sort_values("日期")
         return df
-    except Exception as e:
-        logger.error(f"获取行业数据失败 {industry_name}: {e}")
+    except Exception:
+        logger.exception(f"获取行业数据失败 {industry_name}")
         return pd.DataFrame()
 
 # =============================
@@ -189,8 +189,8 @@ def run_industry_ranking():
         ranking = pd.DataFrame(results, columns=["行业", "行业名称", "评分"])
         ranking = ranking.sort_values("评分", ascending=False)
         return ranking
-    except Exception as e:
-        logger.error(f"运行行业排名失败: {e}")
+    except Exception:
+        logger.exception("运行行业排名失败")
         return pd.DataFrame()
 
 
@@ -204,5 +204,6 @@ if __name__ == "__main__":
         print(ranking.tail(10))
 
         ranking.to_csv("data/industry_ranking.csv", index=False)
-    except Exception as e:
-        logger.error(f"主程序执行失败: {e}")
+    except Exception:
+        logger.exception("主程序执行失败")
+        raise

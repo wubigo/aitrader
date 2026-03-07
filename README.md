@@ -1,7 +1,7 @@
 #  本地llm
 
 ```commandline
-.\llama-server -m C:\Users\bigo\.cache\modelscope\hub\models\Qwen3___5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf --host 127.0.0.1   --port 8080   -c 2048   --batch-size 128  --n-gpu-layers -1  --threads 12  --parallel 1  --rope-freq-base 1000000  --flash-attn on
+.\llama-server -m C:\Users\bigo\.cache\modelscope\hub\models\Qwen3___5-27B-GGUF\Qwen3.5-27B-Q4_K_M.gguf --host 127.0.0.1   --port 8080   -c 2048   --batch-size 128  --n-gpu-layers -1  --threads 12  --parallel 1  --rope-freq-base 1000000  --flash-attn on
 ```
 
 ***推理硬件需求*** (units = total memory: RAM + VRAM, or unified memory)

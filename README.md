@@ -1,3 +1,27 @@
+#  本地llm
+
+```commandline
+.\llama-server -m C:\Users\bigo\.cache\modelscope\hub\models\unsloth\Qwen3___5-27B-GGUF\Qwen3.5-9B-Q4_K_M.gguf --host 127.0.0.1   --port 8080   -c 2048   --gpu-layers 128
+```
+
+***推理硬件需求*** (units = total memory: RAM + VRAM, or unified memory)
+
+| 模型            | 3-bit | 4-bit | 6-bit | 8-bit | BF16 |
+| ------------- | ----- | ----- | ----- | ----- | ---- |
+| Qwen3 0.5B    | 0.5G  | 0.8G  | 1G    | 1.2G  | 1.5G |
+| Qwen3 3B      | 3G    | 3.5G  | 5G    | 7.5G  | 9G   |
+| Qwen3 4B​ | 4.5G  | 5.5G  | 7G    | 10G   | 14G  |
+| Qwen3 9B      | 5.5G  | 6.5G  | 9G    | 13G   | 19G  |
+| Qwen3 27B     | 14G   | 17G   | 24G   | 30G   | 54G  |
+| Qwen3 35B-A3  | 17G   | 22G   | 30G   | 38G   | 70G  |
+| Qwen3 72B-A10 | 60G   | 70G   | 106G  | 132G  | 245G |
+| Qwen3 70B-A17 | 180G  | 214G  | 340G  | 512G  | 810G |
+
+
+
+
+
+
 #  量化系统概述
 
 ```

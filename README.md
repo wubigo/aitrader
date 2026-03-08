@@ -1,8 +1,20 @@
 #  本地llm
 
 ```commandline
-.\llama-server -m C:\Users\bigo\.cache\modelscope\hub\models\Qwen3___5-27B-GGUF\Qwen3.5-27B-Q4_K_M.gguf --host 127.0.0.1   --port 8080   -c 2048   --batch-size 128  --n-gpu-layers -1  --threads 12  --parallel 1  --rope-freq-base 1000000  --flash-attn on
+warp:\>llama-server -m C:\Users\bigo\.cache\modelscope\hub\models\unsloth\Qwen3___5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf --host 127.0.0.1   --port 8080   -c 2048   --batch-size 128  --n-gpu-layers -1  --threads 12  --parallel 1  --rope-freq-base 1000000  --flash-attn on
 ```
+
+## 验证性能
+
+```
+
+$start = Get-Date
+iwr -Uri "http://127.0.0.1:8080/v1/chat/completions" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"model":"qwen3","messages":[{"role":"user","content":"写100字文章"}],"max_tokens":256}'
+$tokens_per_sec = 256 / ((Get-Date) - $start).TotalSeconds
+Write-Output "性能: $tokens_per_sec t/s"
+```
+
+
 
 ***推理硬件需求*** (units = total memory: RAM + VRAM, or unified memory)
 

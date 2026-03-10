@@ -16,6 +16,10 @@ df = pd.read_csv(csv_file)
 
 # 适配 AkShare 列名
 df["datetime"] = pd.to_datetime(df["日期"])
+# 如果是 tz-naive，localize 为 UTC+8；若已包含时区则保持不变
+if getattr(df["datetime"].dt, "tz", None) is None:
+    df["datetime"] = df["datetime"].dt.tz_localize(utc_8)
+
 df["open"] = df["开盘"]
 df["high"] = df["最高"]
 df["low"] = df["最低"]
@@ -24,8 +28,14 @@ df["volume"] = df["成交量"]
 
 bars = []
 for row in df.itertuples():
-    dt = row.datetime.replace(tzinfo=utc_8)
-    print(dt)
+    # 将 pandas.Timestamp 转换为 Python 的 datetime，且保留时区信息
+    dt = getattr(row, "datetime")
+    try:
+        dt = dt.to_pydatetime()
+    except Exception:
+        # 如果不是 pandas.Timestamp，假定已是 datetime
+        pass
+    
     bar = BarData(
         symbol=symbol,
         exchange=exchange,

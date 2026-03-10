@@ -18,7 +18,7 @@ df = ak.stock_zh_a_hist(
     adjust="qfq"          # 前复权
 )
 
-df["日期"] = pd.to_datetime(df["日期"])
+# df["日期"] = pd.to_datetime(df["日期"])
 df["开盘"] = df["开盘"].astype(float)
 df["最高"] = df["最高"].astype(float)
 df["最低"] = df["最低"].astype(float)

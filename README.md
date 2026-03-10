@@ -215,9 +215,3 @@ df_processed = processor.standardize(df_processed, cols)
 signal = MomentumSignal.generate_signals(df_processed, 'momentum_60d')
 ```
 
-
-## vnpy
-
-```commandline
-pip install vnpy vnpy_ctastrategy
-```

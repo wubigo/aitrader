@@ -1,7 +1,7 @@
 #  本地llm
 
 ```commandline
-warp:\>llama-server -m C:\Users\bigo\.cache\modelscope\hub\models\unsloth\Qwen3___5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf --host 127.0.0.1   --port 8080   -c 2048   --batch-size 128  --n-gpu-layers -1  --threads 12  --parallel 1  --rope-freq-base 1000000  --flash-attn on
+warp:\>llama-server -m C:\Users\bigo\.cache\modelscope\hub\models\unsloth\Qwen3___5-4B-GGUF\Qwen3.5-4B-Q4_K_S.gguf --host 127.0.0.1   --port 8080   -c 4096   --batch-size 128  --n-gpu-layers -1  --threads 12  --parallel 1  --rope-freq-base 1000000  --flash-attn on
 ```
 
 ## 验证性能
@@ -213,4 +213,11 @@ df_processed = processor.standardize(df_processed, cols)
 
 # 生成交易信号
 signal = MomentumSignal.generate_signals(df_processed, 'momentum_60d')
+```
+
+
+## vnpy
+
+```commandline
+pip install vnpy vnpy_ctastrategy
 ```

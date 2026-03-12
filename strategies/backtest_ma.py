@@ -1,9 +1,12 @@
 """
 双均线策略回测脚本 - 使用 vn.py CtaBacktester
+支持参数优化功能
 """
 from vnpy_ctastrategy.backtesting import BacktestingEngine
+from vnpy_ctastrategy.base import BacktestingMode
 from vnpy.trader.constant import Interval, Exchange
 from datetime import datetime
+from itertools import product
 import akshare as ak
 import pandas as pd
 from vnpy.trader.database import get_database
@@ -85,7 +88,7 @@ def import_data_to_vnpy(df: pd.DataFrame, symbol: str, exchange: Exchange):
     logger.info(f"数据入库完成: {symbol}, 共 {len(bars)} 条")
 
 
-def run_backtest(
+def run_single_backtest(
     strategy_class,
     symbol: str = "000001",
     exchange: Exchange = Exchange.SZSE,
@@ -94,6 +97,7 @@ def run_backtest(
     initial_capital: float = 100000.0,
     fast_window: int = 10,
     slow_window: int = 20,
+    fixed_size: int = 100,
 ):
     """
     运行回测
@@ -133,7 +137,7 @@ def run_backtest(
     setting = {
         "fast_window": fast_window,
         "slow_window": slow_window,
-        "fixed_size": 100,    # 每次交易100股
+        "fixed_size": fixed_size,
     }
     engine.add_strategy(strategy_class, setting)
     
@@ -168,6 +172,156 @@ def run_backtest(
     return engine, df, statistics
 
 
+def run_parameter_optimization(
+    strategy_class,
+    symbol: str = "000001",
+    exchange: Exchange = Exchange.SZSE,
+    start: datetime = None,
+    end: datetime = None,
+    initial_capital: float = 100000.0,
+    fast_window_range: range = range(5, 31, 5),
+    slow_window_range: range = range(10, 61, 10),
+    fixed_size: int = 100,
+    target_metric: str = "sharpe_ratio",
+):
+    """
+    参数优化 - 网格搜索最佳参数组合
+    
+    :param strategy_class: 策略类
+    :param symbol: 股票代码
+    :param exchange: 交易所
+    :param start: 回测开始时间
+    :param end: 回测结束时间
+    :param initial_capital: 初始资金
+    :param fast_window_range: 快线周期范围
+    :param slow_window_range: 慢线周期范围
+    :param fixed_size: 每次交易股数
+    :param target_metric: 优化目标指标 (sharpe_ratio, total_return, max_drawdown, win_rate)
+    :return: 最佳参数组合和结果列表
+    """
+    # 默认时间范围
+    if start is None:
+        start = datetime(2020, 1, 1)
+    if end is None:
+        end = datetime(2024, 12, 31)
+    
+    logger.info("=" * 60)
+    logger.info("开始参数优化")
+    logger.info(f"快线范围: {list(fast_window_range)}")
+    logger.info(f"慢线范围: {list(slow_window_range)}")
+    logger.info(f"优化目标: {target_metric}")
+    logger.info("=" * 60)
+    
+    results = []
+    total_combinations = len(list(fast_window_range)) * len(list(slow_window_range))
+    current = 0
+    
+    # 遍历所有参数组合
+    for fast, slow in product(fast_window_range, slow_window_range):
+        # 确保快线周期小于慢线周期
+        if fast >= slow:
+            continue
+            
+        current += 1
+        logger.info(f"\n[{current}/{total_combinations}] 测试参数: 快线={fast}, 慢线={slow}")
+        
+        try:
+            # 创建回测引擎
+            engine = BacktestingEngine()
+            
+            # 设置回测参数
+            engine.set_parameters(
+                vt_symbol=f"{symbol}.{exchange.value}",
+                interval=Interval.DAILY,
+                start=start,
+                end=end,
+                rate=0.0003,
+                slippage=0.01,
+                size=1,
+                pricetick=0.01,
+                capital=initial_capital,
+                mode=BacktestingMode.BAR,
+            )
+            
+            # 添加策略
+            setting = {
+                "fast_window": fast,
+                "slow_window": slow,
+                "fixed_size": fixed_size,
+            }
+            engine.add_strategy(strategy_class, setting)
+            
+            # 加载数据并运行
+            engine.load_data()
+            engine.run_backtesting()
+            
+            # 计算结果
+            df = engine.calculate_result()
+            stats = engine.calculate_statistics()
+            
+            # 记录结果
+            result = {
+                "fast_window": fast,
+                "slow_window": slow,
+                "total_return": stats.get("total_return", 0),
+                "sharpe_ratio": stats.get("sharpe_ratio", 0),
+                "max_drawdown": stats.get("max_drawdown", 0),
+                "win_rate": stats.get("win_rate", 0),
+                "trade_count": stats.get("total_trade_count", 0),
+                "daily_return": stats.get("daily_return", 0),
+                "return_drawdown_ratio": stats.get("return_drawdown_ratio", 0),
+            }
+            results.append(result)
+            
+            logger.info(f"  总收益率: {result['total_return']:.2f}%")
+            logger.info(f"  夏普比率: {result['sharpe_ratio']:.2f}")
+            logger.info(f"  最大回撤: {result['max_drawdown']:.2f}%")
+            logger.info(f"  胜率: {result['win_rate']:.2f}%")
+            logger.info(f"  交易次数: {result['trade_count']}")
+            
+        except Exception as e:
+            logger.error(f"参数组合 (fast={fast}, slow={slow}) 运行失败: {e}")
+            continue
+    
+    # 根据目标指标排序
+    if target_metric == "max_drawdown":
+        # 最大回撤越小越好（取绝对值最小的）
+        results.sort(key=lambda x: abs(x[target_metric]))
+    else:
+        # 其他指标越大越好
+        results.sort(key=lambda x: x[target_metric], reverse=True)
+    
+    # 输出最佳参数
+    logger.info("\n" + "=" * 60)
+    logger.info("参数优化完成 - TOP 10 结果")
+    logger.info("=" * 60)
+    
+    for i, r in enumerate(results[:10], 1):
+        logger.info(f"\n第 {i} 名:")
+        logger.info(f"  参数: 快线={r['fast_window']}, 慢线={r['slow_window']}")
+        logger.info(f"  总收益率: {r['total_return']:.2f}%")
+        logger.info(f"  夏普比率: {r['sharpe_ratio']:.2f}")
+        logger.info(f"  最大回撤: {r['max_drawdown']:.2f}%")
+        logger.info(f"  胜率: {r['win_rate']:.2f}%")
+        logger.info(f"  交易次数: {r['trade_count']}")
+    
+    # 返回最佳参数
+    best = results[0] if results else None
+    if best:
+        logger.info("\n" + "=" * 60)
+        logger.info(f"最佳参数组合: 快线={best['fast_window']}, 慢线={best['slow_window']}")
+        logger.info("=" * 60)
+    
+    return best, results
+
+
+def save_optimization_results(results: list, filename: str = "../data/optimization_results.csv"):
+    """保存优化结果到 CSV 文件"""
+    df = pd.DataFrame(results)
+    df.to_csv(filename, index=False, encoding="utf-8-sig")
+    logger.info(f"优化结果已保存到: {filename}")
+
+
 if __name__ == "__main__":
     # 导入策略
     from ma_strategy import DoubleMaStrategy
@@ -178,20 +332,69 @@ if __name__ == "__main__":
     START_DATE = "20200101"
     END_DATE = "20241231"
     
+    # 模式选择: "single" = 单次回测, "optimize" = 参数优化
+    MODE = "optimize"  # 修改这里切换模式
+    
     # 步骤1: 下载数据（可选，如果数据库中已有数据可跳过）
     df = download_data_from_akshare(SYMBOL, START_DATE, END_DATE)
     
     # 步骤2: 导入数据到 vn.py
     import_data_to_vnpy(df, SYMBOL, EXCHANGE)
     
-    # 步骤3: 运行回测
-    engine, result_df, stats = run_backtest(
-        strategy_class=DoubleMaStrategy,
-        symbol=SYMBOL,
-        exchange=EXCHANGE,
-        start=datetime(2020, 1, 1),
-        end=datetime(2024, 12, 31),
-        initial_capital=100000.0,
-        fast_window=10,
-        slow_window=20,
-    )
+    if MODE == "single":
+        # 单次回测模式
+        logger.info("\n运行单次回测模式...")
+        engine, result_df, stats = run_single_backtest(
+            strategy_class=DoubleMaStrategy,
+            symbol=SYMBOL,
+            exchange=EXCHANGE,
+            start=datetime(2020, 1, 1),
+            end=datetime(2024, 12, 31),
+            initial_capital=100000.0,
+            fast_window=10,
+            slow_window=20,
+        )
+    
+    elif MODE == "optimize":
+        # 参数优化模式
+        logger.info("\n运行参数优化模式...")
+        
+        # 定义参数搜索范围
+        fast_range = range(5, 31, 5)    # 快线: 5, 10, 15, 20, 25, 30
+        slow_range = range(10, 61, 10)  # 慢线: 10, 20, 30, 40, 50, 60
+        
+        # 运行优化
+        best_params, all_results = run_parameter_optimization(
+            strategy_class=DoubleMaStrategy,
+            symbol=SYMBOL,
+            exchange=EXCHANGE,
+            start=datetime(2020, 1, 1),
+            end=datetime(2024, 12, 31),
+            initial_capital=100000.0,
+            fast_window_range=fast_range,
+            slow_window_range=slow_range,
+            target_metric="sharpe_ratio",  # 优化目标: sharpe_ratio, total_return, max_drawdown, win_rate
+        )
+        
+        # 保存优化结果
+        save_optimization_results(all_results, f"../data/optimization_{SYMBOL}.csv")
+        
+        # 使用最佳参数运行一次详细回测
+        if best_params:
+            logger.info("\n使用最佳参数运行详细回测...")
+            engine, result_df, stats = run_single_backtest(
+                strategy_class=DoubleMaStrategy,
+                symbol=SYMBOL,
+                exchange=EXCHANGE,
+                start=datetime(2020, 1, 1),
+                end=datetime(2024, 12, 31),
+                initial_capital=100000.0,
+                fast_window=best_params["fast_window"],
+                slow_window=best_params["slow_window"],
+            )
+            
+            # 显示图表
+            try:
+                engine.show_chart()
+            except Exception as e:
+                logger.warning(f"无法显示图表: {e}")

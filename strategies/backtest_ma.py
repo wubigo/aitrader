@@ -98,6 +98,13 @@ def run_single_backtest(
     fast_window: int = 10,
     slow_window: int = 20,
     fixed_size: int = 100,
+    # 过滤参数
+    use_volume_filter: bool = True,
+    volume_ratio: float = 1.2,
+    use_volatility_filter: bool = True,
+    atr_threshold: float = 0.5,
+    use_trend_filter: bool = False,
+    adx_threshold: float = 25,
 ):
     """
     运行回测
@@ -138,6 +145,12 @@ def run_single_backtest(
         "fast_window": fast_window,
         "slow_window": slow_window,
         "fixed_size": fixed_size,
+        "use_volume_filter": use_volume_filter,
+        "volume_ratio": volume_ratio,
+        "use_volatility_filter": use_volatility_filter,
+        "atr_threshold": atr_threshold,
+        "use_trend_filter": use_trend_filter,
+        "adx_threshold": adx_threshold,
     }
     engine.add_strategy(strategy_class, setting)
     
@@ -183,6 +196,11 @@ def run_parameter_optimization(
     slow_window_range: range = range(10, 61, 10),
     fixed_size: int = 100,
     target_metric: str = "sharpe_ratio",
+    # 过滤参数优化范围
+    optimize_volume_filter: bool = False,
+    volume_ratio_range: list = [1.0, 1.2, 1.5],
+    optimize_volatility_filter: bool = False,
+    atr_threshold_range: list = [0.3, 0.5, 0.8],
 ):
     """
     参数优化 - 网格搜索最佳参数组合
@@ -209,21 +227,56 @@ def run_parameter_optimization(
     logger.info("开始参数优化")
     logger.info(f"快线范围: {list(fast_window_range)}")
     logger.info(f"慢线范围: {list(slow_window_range)}")
+    if optimize_volume_filter:
+        logger.info(f"成交量倍数范围: {volume_ratio_range}")
+    if optimize_volatility_filter:
+        logger.info(f"ATR阈值范围: {atr_threshold_range}")
     logger.info(f"优化目标: {target_metric}")
     logger.info("=" * 60)
     
     results = []
-    total_combinations = len(list(fast_window_range)) * len(list(slow_window_range))
-    current = 0
     
-    # 遍历所有参数组合
+    # 构建参数组合
+    param_combinations = []
     for fast, slow in product(fast_window_range, slow_window_range):
-        # 确保快线周期小于慢线周期
         if fast >= slow:
             continue
+        
+        # 基础参数组合
+        base_params = {"fast_window": fast, "slow_window": slow}
+        
+        # 如果不优化过滤参数，直接添加
+        if not optimize_volume_filter and not optimize_volatility_filter:
+            param_combinations.append(base_params)
+        else:
+            # 添加过滤参数组合
+            vol_ratios = volume_ratio_range if optimize_volume_filter else [1.2]
+            atr_thresholds = atr_threshold_range if optimize_volatility_filter else [0.5]
             
-        current += 1
-        logger.info(f"\n[{current}/{total_combinations}] 测试参数: 快线={fast}, 慢线={slow}")
+            for vol_ratio in vol_ratios:
+                for atr_thresh in atr_thresholds:
+                    params = base_params.copy()
+                    params["volume_ratio"] = vol_ratio
+                    params["atr_threshold"] = atr_thresh
+                    param_combinations.append(params)
+    
+    total_combinations = len(param_combinations)
+    logger.info(f"总共 {total_combinations} 组参数需要测试\n")
+    
+    # 遍历所有参数组合
+    for idx, params in enumerate(param_combinations, 1):
+        fast = params["fast_window"]
+        slow = params["slow_window"]
+        vol_ratio = params.get("volume_ratio", 1.2)
+        atr_thresh = params.get("atr_threshold", 0.5)
+        
+        param_str = f"快线={fast}, 慢线={slow}"
+        if optimize_volume_filter:
+            param_str += f", 量倍={vol_ratio}"
+        if optimize_volatility_filter:
+            param_str += f", ATR={atr_thresh}"
+        
+        logger.info(f"[{idx}/{total_combinations}] 测试参数: {param_str}")
         
         try:
             # 创建回测引擎
@@ -248,6 +301,10 @@ def run_parameter_optimization(
                 "fast_window": fast,
                 "slow_window": slow,
                 "fixed_size": fixed_size,
+                "use_volume_filter": optimize_volume_filter or True,
+                "volume_ratio": vol_ratio,
+                "use_volatility_filter": optimize_volatility_filter or True,
+                "atr_threshold": atr_thresh,
             }
             engine.add_strategy(strategy_class, setting)
             
@@ -263,6 +320,8 @@ def run_parameter_optimization(
             result = {
                 "fast_window": fast,
                 "slow_window": slow,
+                "volume_ratio": vol_ratio,
+                "atr_threshold": atr_thresh,
                 "total_return": stats.get("total_return", 0),
                 "sharpe_ratio": stats.get("sharpe_ratio", 0),
                 "max_drawdown": stats.get("max_drawdown", 0),
@@ -297,8 +356,14 @@ def run_parameter_optimization(
     logger.info("=" * 60)
     
     for i, r in enumerate(results[:10], 1):
+        param_info = f"快线={r['fast_window']}, 慢线={r['slow_window']}"
+        if optimize_volume_filter:
+            param_info += f", 量倍={r['volume_ratio']}"
+        if optimize_volatility_filter:
+            param_info += f", ATR={r['atr_threshold']}"
+        
         logger.info(f"\n第 {i} 名:")
-        logger.info(f"  参数: 快线={r['fast_window']}, 慢线={r['slow_window']}")
+        logger.info(f"  参数: {param_info}")
         logger.info(f"  总收益率: {r['total_return']:.2f}%")
         logger.info(f"  夏普比率: {r['sharpe_ratio']:.2f}")
         logger.info(f"  最大回撤: {r['max_drawdown']:.2f}%")
@@ -308,8 +373,13 @@ def run_parameter_optimization(
     # 返回最佳参数
     best = results[0] if results else None
     if best:
+        best_info = f"快线={best['fast_window']}, 慢线={best['slow_window']}"
+        if optimize_volume_filter:
+            best_info += f", 量倍={best['volume_ratio']}"
+        if optimize_volatility_filter:
+            best_info += f", ATR={best['atr_threshold']}"
         logger.info("\n" + "=" * 60)
-        logger.info(f"最佳参数组合: 快线={best['fast_window']}, 慢线={best['slow_window']}")
+        logger.info(f"最佳参数组合: {best_info}")
         logger.info("=" * 60)
     
     return best, results
@@ -391,6 +461,10 @@ if __name__ == "__main__":
                 initial_capital=100000.0,
                 fast_window=best_params["fast_window"],
                 slow_window=best_params["slow_window"],
+                use_volume_filter=True,
+                volume_ratio=best_params.get("volume_ratio", 1.2),
+                use_volatility_filter=True,
+                atr_threshold=best_params.get("atr_threshold", 0.5),
             )
             
             # 显示图表

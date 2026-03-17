@@ -32,6 +32,9 @@
 .idea/**/gradle.xml
 .idea/**/libraries
 
+# Qoder
+**/.qoder
+
 # python
 test/**/__pycache__/
 
@@ -202,3 +205,5 @@ $RECYCLE.BIN/
 /ibms-gateway/ibms-gateway.iml
 /ibms-gateway/src/test/
 /logs/
+/.vscode/settings.json
+/.vscode/

@@ -121,7 +121,13 @@ def index_publish_daily_sw(symbol: str = "801081", start_date: str = "20260318",
     }
     r = requests.get(url, params=params, headers=headers, verify=False)
     data_json = r.json()
-    total_num = data_json["data"]["count"]
+    total_num = data_json.get("data", {}).get("count", 0)
+    
+    # 如果没有数据，直接返回空 DataFrame
+    if total_num == 0:
+        print(f"申万指数 {symbol} 无数据")
+        return pd.DataFrame(columns=["代码", "日期", "收盘", "开盘", "最高", "最低", "成交量", "成交额"])
+    
     total_page = math.ceil(total_num / 50)
     big_df = pd.DataFrame()
     tqdm = get_tqdm()
@@ -131,6 +137,14 @@ def index_publish_daily_sw(symbol: str = "801081", start_date: str = "20260318",
         data_json = r.json()
         temp_df = pd.DataFrame(data_json["data"]["results"])
         big_df = pd.concat(objs=[big_df, temp_df], ignore_index=True)
+
+    print(big_df)
+    
+    # 如果合并后仍为空，返回标准结构的空 DataFrame
+    if big_df.empty:
+        print(f"申万指数 {symbol} 数据获取失败，返回空 DataFrame")
+        return pd.DataFrame(columns=["代码", "日期", "收盘", "开盘", "最高", "最低", "成交量", "成交额"])
+    
     big_df.rename(
         columns={
             "swindexcode": "代码",
@@ -167,5 +181,3 @@ def index_publish_daily_sw(symbol: str = "801081", start_date: str = "20260318",
     return big_df
 
 
-pd = index_publish_daily_sw()
-print(pd)

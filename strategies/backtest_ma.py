@@ -13,6 +13,9 @@ from vnpy.trader.database import get_database
 from vnpy.trader.object import BarData
 import logging
 
+# 引入通用回测日志工具
+from utils.backtest_logger import save_backtest_log, save_optimization_log
+
 # 设置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -180,8 +183,19 @@ def run_single_backtest(
     try:
         engine.show_chart()
     except Exception as e:
-        logger.warning(f"无法显示图表: {e}")
-    
+        logger.warning(f"无法显示图表：{e}")
+        
+    # 保存回测日志（使用通用工具）
+    log_file = save_backtest_log(
+        logs=engine.logs,
+        statistics=statistics,
+        symbol=symbol,
+        start_date=start.strftime("%Y-%m-%d"),
+        end_date=end.strftime("%Y-%m-%d"),
+        strategy_name="双均线策略",
+    )
+    logger.info(f"回测日志已保存到：{log_file}")
+        
     return engine, df, statistics
 
 
@@ -379,9 +393,18 @@ def run_parameter_optimization(
         if optimize_volatility_filter:
             best_info += f", ATR={best['atr_threshold']}"
         logger.info("\n" + "=" * 60)
-        logger.info(f"最佳参数组合: {best_info}")
+        logger.info(f"最佳参数组合：{best_info}")
         logger.info("=" * 60)
-    
+        
+    # 保存优化结果到文件
+    if results:
+        opt_file = save_optimization_log(
+            optimization_results=results,
+            symbol=symbol,
+            strategy_name="双均线策略",
+        )
+        logger.info(f"参数优化结果已保存到：{opt_file}")
+        
     return best, results
 
 

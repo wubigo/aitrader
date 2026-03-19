@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mainline_data_feed import MainlineDataFeed
 from mainline_strategy import MainlineStrategy
+from utils.backtest_logger import save_backtest_log
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -227,22 +228,18 @@ def run_mainline_backtest(
         if value is not None:
             logger.info(f"{key}: {value}")
     
-    # 保存回测日志到文件
-    log_filename = f"../../data/backtest_log_{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    with open(log_filename, "w", encoding="utf-8") as f:
-        f.write(f"Backtest Log for {symbol}\n")
-        f.write(f"Start: {start}\n")
-        f.write(f"End: {end}\n")
-        f.write("=" * 60 + "\n\n")
-        for log in engine.logs:
-            f.write(log + "\n")
-        f.write("\n" + "=" * 60 + "\n")
-        f.write("Statistics:\n")
-        for key, value in statistics.items():
-            if value is not None:
-                f.write(f"{key}: {value}\n")
-    
-    logger.info(f"回测日志已保存到: {log_filename}")
+    # 保存回测日志到文件（使用通用工具函数）
+    log_filename = save_backtest_log(
+        logs=engine.logs,
+        statistics=statistics,
+        symbol=symbol,
+        start_date=start.strftime("%Y-%m-%d"),
+        end_date=end.strftime("%Y-%m-%d"),
+        strategy_name="主线选股策略",
+    )
+        
+    logger.info(f"回测日志已保存到：{log_filename}")
+    logger.info(f"回测完成！总收益率：{pct_returns:.2%}")
     
     # 显示图表
     try:

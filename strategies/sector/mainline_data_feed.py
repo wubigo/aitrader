@@ -8,6 +8,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import logging
+import utils.ak as ak_util
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,11 @@ class MainlineDataFeed:
         """
         获取行业指数历史数据
         
-        :param index_code: 指数代码，如 "H30184"（中证半导体）
+        支持两种代码格式：
+        - 同花顺行业代码：如 "885952"（推荐，更稳定）
+        - 中证指数代码：如 "H30184"（备用）
+        
+        :param index_code: 指数代码
         :param days: 获取天数
         :return: DataFrame with OHLCV
         """
@@ -56,30 +61,41 @@ class MainlineDataFeed:
             return cached
         
         try:
-            # 使用AKShare获取指数数据
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
+            start_str = start_date.strftime("%Y%m%d")
+            end_str = end_date.strftime("%Y%m%d")
             
-            # 调用中证指数数据接口
-            df = ak.index_zh_a_hist(
+            # 使用申万行业指数接口（推荐）
+            logger.info(f"使用申万行业接口获取 {index_code} 数据")
+            df = ak_util.index_publish_daily_sw(
                 symbol=index_code,
-                period="daily",
-                start_date=start_date.strftime("%Y%m%d"),
-                end_date=end_date.strftime("%Y%m%d"),
+                start_date=start_str,
+                end_date=end_str,
             )
+
+            # 申万接口列名标准化
+            if not df.empty:
+                column_mapping = {
+                    "日期": "date",
+                    "开盘": "open",
+                    "最高": "high",
+                    "最低": "low",
+                    "收盘": "close",
+                    "成交量": "volume",
+                    "成交额": "amount",
+                }
+                df = df.rename(columns=column_mapping)
             
             if df.empty:
                 logger.warning(f"获取指数 {index_code} 数据为空")
                 return pd.DataFrame()
             
-            # 标准化列名
-            df.columns = [c.lower() for c in df.columns]
-            
             self._set_cache(cache_key, df)
             return df
             
         except Exception as e:
-            logger.error(f"获取行业指数数据失败 {index_code}: {e}")
+            logger.exception(f"获取行业指数数据失败 {index_code}: {e}")
             return pd.DataFrame()
     
     def calculate_sector_indicators(self, index_code: str) -> Optional[Dict]:
@@ -338,11 +354,31 @@ def demo_data_feed():
     """数据接口使用示例"""
     feed = MainlineDataFeed()
     
-    # 行业配置
+    # 行业配置 - 使用申万行业指数代码
+    # 申万行业代码查询: ak.index_stock_sw_df()
     sectors = {
-        "半导体": {"index_code": "H30184", "stocks": ["688981", "603501"]},
-        "新能源": {"index_code": "399808", "stocks": ["300750", "002594"]},
+        "半导体": {
+            "index_code": "801081",  # 申万半导体指数
+            "stocks": ["688981", "603501", "002371"],
+        },
+        "电力设备": {
+            "index_code": "801161",  # 申万电力设备指数（新能源）
+            "stocks": ["300750", "002594", "601012"],
+        },
+        "食品饮料": {
+            "index_code": "801120",  # 申万食品饮料指数（白酒）
+            "stocks": ["600519", "000858", "000568"],
+        },
+        "医药生物": {
+            "index_code": "801150",  # 申万医药生物指数
+            "stocks": ["600276", "000661", "300760"],
+        },
+        "银行": {
+            "index_code": "801780",  # 申万银行指数
+            "stocks": ["000001", "600000", "601398"],
+        },
     }
+
     
     print("=" * 60)
     print("行业排名")

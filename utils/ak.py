@@ -23,7 +23,7 @@ def index_analysis_daily_sw(
     :return: 指数分析
     :rtype: pandas.DataFrame
     """
-    symbol = "二级行业",
+    symbol = "一级行业",
     url = "https://www.swsresearch.com/institute-sw/api/index_analysis/index_analysis_report/"
     params = {
         "page": "1",
@@ -138,8 +138,6 @@ def index_publish_daily_sw(symbol: str = "801081", start_date: str = "20260318",
         temp_df = pd.DataFrame(data_json["data"]["results"])
         big_df = pd.concat(objs=[big_df, temp_df], ignore_index=True)
 
-    print(big_df)
-    
     # 如果合并后仍为空，返回标准结构的空 DataFrame
     if big_df.empty:
         print(f"申万指数 {symbol} 数据获取失败，返回空 DataFrame")

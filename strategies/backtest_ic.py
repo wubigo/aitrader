@@ -11,6 +11,7 @@ from vnpy_ctastrategy.backtesting import BacktestingEngine
 from vnpy_ctastrategy.base import BacktestingMode
 from vnpy.trader.constant import Interval, Exchange
 from datetime import datetime
+import requests
 import akshare as ak
 import pandas as pd
 from vnpy.trader.database import get_database
@@ -29,6 +30,22 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _retry_akshare(fn, retries: int = 3, backoff: float = 1.0, *args, **kwargs):
+    import time
+    from urllib3.exceptions import ProtocolError
+    from http.client import RemoteDisconnected
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (ConnectionError, RemoteDisconnected, ProtocolError, requests.exceptions.ConnectionError) as conn_err:
+            logger.warning(f"AKShare 连接错误（第 {attempt}/{retries} 次）：{conn_err}")
+            if attempt == retries:
+                raise
+            time.sleep(backoff * attempt)
+        except Exception:
+            raise
+
+
 def download_ic_data(symbol: str = "IC0", start_date: str = "20230101", end_date: str = "20241231") -> pd.DataFrame:
     """
     下载 IC 期货主力合约连续数据
@@ -38,31 +55,28 @@ def download_ic_data(symbol: str = "IC0", start_date: str = "20230101", end_date
     :param end_date: 结束日期
     """
     logger.info(f"下载 IC 期货数据 {symbol}...")
-    
+
     try:
         # 新版 akshare 可能不再支持 trade_date，一般使用 start_date/end_date 或仅 symbol
         try:
-            df = ak.futures_main_sina(
+            df = _retry_akshare(
+                ak.futures_main_sina,
                 symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,
             )
         except TypeError:
-            df = ak.futures_main_sina(symbol=symbol)
-
-        # 如果是获取历史连续数据，使用不同的接口
-        # 这里简化处理，实际需要调用正确的接口
+            df = _retry_akshare(ak.futures_main_sina, symbol=symbol)
 
         if df.empty:
             logger.warning("获取数据为空")
             return pd.DataFrame()
-        
+
         return df
-        
+
     except Exception as e:
         logger.exception(f"下载失败：{e}")
         return pd.DataFrame()
-
 
 def download_500etf_data(start_date: str, end_date: str) -> pd.DataFrame:
     """
@@ -76,7 +90,8 @@ def download_500etf_data(start_date: str, end_date: str) -> pd.DataFrame:
     try:
         # 尝试新版 API
         try:
-            df = ak.fund_etf_hist_em(
+            df = _retry_akshare(
+                ak.fund_etf_hist_em,
                 symbol="159919",
                 period="daily",
                 start_date=start_date.replace("-", ""),
@@ -86,7 +101,8 @@ def download_500etf_data(start_date: str, end_date: str) -> pd.DataFrame:
         except AttributeError:
             # 回退到老版 API 或其他替代
             try:
-                df = ak.etf_hist_em(
+                df = _retry_akshare(
+                    ak.etf_hist_em,
                     symbol="sh510500",
                     period="daily",
                     start_date=start_date.replace("-", ""),
@@ -95,7 +111,8 @@ def download_500etf_data(start_date: str, end_date: str) -> pd.DataFrame:
                 )
             except AttributeError:
                 logger.warning("ETF 数据接口不可用，尝试基金接口...")
-                df = ak.fund_etf_hist_em(
+                df = _retry_akshare(
+                    ak.fund_etf_hist_em,
                     symbol="159919",  # 沪深300ETF
                     period="daily",
                     start_date=start_date.replace("-", ""),
@@ -288,6 +305,8 @@ if __name__ == "__main__":
     if not df_futures.empty:
         import_to_vnpy(df_futures, "IC2406", Exchange.CFFEX)
 
-        df_etf = download_500etf_data(START_DATE, END_DATE)
-        if not df_etf.empty:
-            import_to_vnpy(df_etf, "510500", Exchange.SSE)
+    df_etf = download_500etf_data(START_DATE, END_DATE)
+    if not df_etf.empty:
+        df_etf = df_etf.rename(columns={'开盘': '开盘价', '收盘': '收盘价', '最高': '最高价', '最低': '最低价'})
+
+        import_to_vnpy(df_etf, "510500", Exchange.SSE)

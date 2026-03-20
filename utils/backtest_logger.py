@@ -17,7 +17,7 @@ def save_backtest_log(
     symbol: str,
     start_date: str,
     end_date: str,
-    output_dir: str = "../../data",
+    output_dir: Optional[str] = None,
     filename_prefix: str = "backtest_log",
     strategy_name: Optional[str] = None,
     extra_info: Optional[Dict[str, Any]] = None,
@@ -49,8 +49,13 @@ def save_backtest_log(
         ...     strategy_name="MA 策略"
         ... )
     """
+    # 使用项目根目录 data 作为默认路径
+    if output_dir is None:
+        output_path = Path(__file__).resolve().parents[1] / "data"
+    else:
+        output_path = Path(output_dir)
+
     # 确保输出目录存在
-    output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     # 生成文件名
@@ -103,7 +108,7 @@ def save_backtest_log(
 def save_optimization_log(
     optimization_results: List[Dict[str, Any]],
     symbol: str,
-    output_dir: str = "../../data",
+    output_dir: Optional[str] = None,
     filename_prefix: str = "optimization_result",
     strategy_name: Optional[str] = None,
 ) -> str:
@@ -127,8 +132,13 @@ def save_optimization_log(
         ... ]
         >>> opt_file = save_optimization_log(results, symbol="600519")
     """
+    # 使用项目根目录 data 作为默认路径
+    if output_dir is None:
+        output_path = Path(__file__).resolve().parents[1] / "data"
+    else:
+        output_path = Path(output_dir)
+
     # 确保输出目录存在
-    output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     # 生成文件名

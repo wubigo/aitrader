@@ -58,9 +58,9 @@ def save_backtest_log(
     if strategy_name:
         # 如果提供了策略名称，加入文件名
         safe_strategy_name = "".join(c for c in strategy_name if c.isalnum() or c in "-_")
-        filename = f"{filename_prefix}_{safe_strategy_name}_{symbol}_{timestamp}.txt"
+        filename = f"{filename_prefix}_{safe_strategy_name}_{symbol}_{timestamp}.log"
     else:
-        filename = f"{filename_prefix}_{symbol}_{timestamp}.txt"
+        filename = f"{filename_prefix}_{symbol}_{timestamp}.log"
     
     log_filename = output_path / filename
     
@@ -135,9 +135,9 @@ def save_optimization_log(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if strategy_name:
         safe_strategy_name = "".join(c for c in strategy_name if c.isalnum() or c in "-_")
-        filename = f"{filename_prefix}_{safe_strategy_name}_{symbol}_{timestamp}.txt"
+        filename = f"{filename_prefix}_{safe_strategy_name}_{symbol}_{timestamp}.log"
     else:
-        filename = f"{filename_prefix}_{symbol}_{timestamp}.txt"
+        filename = f"{filename_prefix}_{symbol}_{timestamp}.log"
     
     log_filename = output_path / filename
     

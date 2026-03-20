@@ -18,6 +18,7 @@ from vnpy.trader.object import BarData
 import logging
 import sys
 import os
+from pathlib import Path
 
 # 添加路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -121,7 +122,7 @@ def import_to_vnpy(df: pd.DataFrame, symbol: str, exchange: Exchange):
 
 
 def run_backtest(
-    symbol: str = "IC2406.SFF",
+    symbol: str = "IC2406.CFFEX",
     start: datetime = None,
     end: datetime = None,
     initial_capital: float = 1000000.0,
@@ -141,83 +142,95 @@ def run_backtest(
     
     engine = BacktestingEngine()
     
-    engine.set_parameters(
-        vt_symbol=symbol,
-        interval=Interval.DAILY,
-        start=start,
-        end=end,
-        rate=0.000023,       # 期货手续费万分之 0.23
-        slippage=0.2,        # 滑点 0.2 点
-        size=200,            # IC 合约乘数 200 元/点
-        pricetick=0.2,       # 最小变动价位 0.2 点
-        capital=initial_capital,
-        mode=BacktestingMode.BAR,
-    )
+    # Initialize variables to avoid assignment errors
+    df = pd.DataFrame()
+    statistics = {}
+    backtest_error = None
     
-    # 策略参数
-    setting = {
-        "spot_symbol": "510500.SSE",
-        "futures_symbol": "IC.SFF",
-        "open_basis_threshold": -0.02,      # -2% 贴水开仓
-        "min_open_volume": 1,
-        "close_basis_threshold": -0.005,    # -0.5% 平仓
-        "max_holding_days": 20,
-        "stop_loss_pct": 0.03,              # 3% 止损
-        "roll_days_before_expiry": 5,
-        "roll_spread_threshold": 0.005,     # 0.5% 滚动阈值
-        "position_ratio": 0.8,
-        "cash_reserve": 0.2,
-    }
-    
-    engine.add_strategy(ICBackwaterArbitrageStrategy, setting)
-    
-    logger.info("加载数据...")
-    engine.load_data()
-    
-    logger.info("运行回测...")
-    engine.run_backtesting()
-    
-    # 计算结果
-    df = engine.calculate_result()
-    statistics = engine.calculate_statistics()
-    
-    # 输出结果
-    logger.info("\n" + "=" * 60)
-    logger.info("回测结果")
-    logger.info("=" * 60)
-    for key, value in statistics.items():
-        if value is not None:
-            logger.info(f"{key}: {value}")
-    
-    # 保存日志
-    log_filename = f"../../data/ic_backtest_log_{symbol.replace('.', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    with open(log_filename, "w", encoding="utf-8") as f:
-        f.write(f"IC 滚贴水套利回测报告\n")
-        f.write(f"标的：{symbol}\n")
-        f.write(f"期间：{start.date()} ~ {end.date()}\n")
-        f.write("=" * 60 + "\n\n")
-        for log in engine.logs:
-            f.write(log + "\n")
-        f.write("\n" + "=" * 60 + "\n")
-        f.write("统计指标:\n")
+    try:
+
+        engine.set_parameters(
+            vt_symbol=symbol,
+            interval=Interval.DAILY,
+            start=start,
+            end=end,
+            rate=0.000023,  # 期货手续费万分之 0.23
+            slippage=0.2,  # 滑点 0.2 点
+            size=200,  # IC 合约乘数 200 元/点
+            pricetick=0.2,  # 最小变动价位 0.2 点
+            capital=initial_capital,
+            mode=BacktestingMode.BAR,
+        )
+
+        # 策略参数
+        setting = {
+            "spot_symbol": "510500.SSE",
+            "futures_symbol": "IC.SFF",
+            "open_basis_threshold": -0.02,  # -2% 贴水开仓
+            "min_open_volume": 1,
+            "close_basis_threshold": -0.005,  # -0.5% 平仓
+            "max_holding_days": 20,
+            "stop_loss_pct": 0.03,  # 3% 止损
+            "roll_days_before_expiry": 5,
+            "roll_spread_threshold": 0.005,  # 0.5% 滚动阈值
+            "position_ratio": 0.8,
+            "cash_reserve": 0.2,
+        }
+
+        engine.add_strategy(ICBackwaterArbitrageStrategy, setting)
+
+        logger.info("加载数据...")
+        engine.load_data()
+
+        logger.info("运行回测...")
+        engine.run_backtesting()
+
+        # 计算结果
+        df = engine.calculate_result()
+        statistics = engine.calculate_statistics()
+
+        # 输出结果
+        logger.info("\n" + "=" * 60)
+        logger.info("回测结果")
+        logger.info("=" * 60)
         for key, value in statistics.items():
             if value is not None:
-                f.write(f"{key}: {value}\n")
-    
-    logger.info(f"回测日志已保存到：{log_filename}")
-    
+                logger.info(f"{key}: {value}")
+
+    except Exception as e:
+        backtest_error = e
+        logger.exception(f"回测过程中出现异常：{e}")
+
+    # Save logs using the utility function (handles empty logs/statistics gracefully)
+    try:
+        from utils.backtest_logger import save_backtest_log
+        log_filename = save_backtest_log(
+            logs=engine.logs if hasattr(engine, 'logs') else [],
+            statistics=statistics if statistics else {},
+            symbol=symbol.replace('.', '_'),
+            start_date=start.strftime("%Y-%m-%d"),
+            end_date=end.strftime("%Y-%m-%d"),
+            strategy_name="IC 滚贴水套利",
+        )
+        logger.info(f"回测日志已保存到：{log_filename}")
+    except Exception as log_ex:
+        logger.exception(f"保存回测日志失败：{log_ex}")
+
     # 显示图表
     try:
         engine.show_chart()
     except Exception as e:
         logger.warning(f"无法显示图表：{e}")
-    
+
+    if backtest_error is not None:
+        raise backtest_error
+
     return engine, df, statistics
 
 
 if __name__ == "__main__":
     # 配置
-    SYMBOL = "IC2406.SFF"
+    SYMBOL = "IC2406.CFFEX"
     START_DATE = "20230101"
     END_DATE = "20241231"
     

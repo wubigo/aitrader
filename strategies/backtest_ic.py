@@ -67,26 +67,47 @@ def download_ic_data(symbol: str = "IC0", start_date: str = "20230101", end_date
 def download_500etf_data(start_date: str, end_date: str) -> pd.DataFrame:
     """
     下载 500ETF 数据作为现货代理
-    
+
     :param start_date: 开始日期
     :param end_date: 结束日期
     """
     logger.info("下载 500ETF 数据...")
-    
+
     try:
-        df = ak.etf_hist_em(
-            symbol="sh510500",
-            period="daily",
-            start_date=start_date.replace("-", ""),
-            end_date=end_date.replace("-", ""),
-            adjust="qfq"
-        )
-        
+        # 尝试新版 API
+        try:
+            df = ak.fund_etf_hist_em(
+                symbol="159919",
+                period="daily",
+                start_date=start_date.replace("-", ""),
+                end_date=end_date.replace("-", ""),
+                adjust="qfq"
+            )
+        except AttributeError:
+            # 回退到老版 API 或其他替代
+            try:
+                df = ak.etf_hist_em(
+                    symbol="sh510500",
+                    period="daily",
+                    start_date=start_date.replace("-", ""),
+                    end_date=end_date.replace("-", ""),
+                    adjust="qfq"
+                )
+            except AttributeError:
+                logger.warning("ETF 数据接口不可用，尝试基金接口...")
+                df = ak.fund_etf_hist_em(
+                    symbol="159919",  # 沪深300ETF
+                    period="daily",
+                    start_date=start_date.replace("-", ""),
+                    end_date=end_date.replace("-", ""),
+                    adjust="qfq"
+                )
+
         if df.empty:
             return pd.DataFrame()
-        
+
         return df
-        
+
     except Exception as e:
         logger.exception(f"下载 ETF 数据失败：{e}")
         return pd.DataFrame()

@@ -6,6 +6,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+import pandas as pd
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -241,3 +242,13 @@ def quick_save_log(engine, symbol: str, start: str, end: str, **kwargs) -> str:
         end_date=end,
         **kwargs
     )
+
+
+def backup_dataframe(df: pd.DataFrame, filename: str, index: bool = False, encoding: str = "utf-8-sig"):
+    """保存 DataFrame 到项目根目录的 data 目录，创建目录后写文件。"""
+    # 使用项目根目录 data 作为默认路径
+    output_path = Path(__file__).resolve().parents[1] / "data"
+    output_path.mkdir(parents=True, exist_ok=True)
+    output_path = Path(output_path) / filename
+    df.to_csv(output_path, index=index, encoding=encoding)
+    logger.info(f"已保存数据到：{output_path}")

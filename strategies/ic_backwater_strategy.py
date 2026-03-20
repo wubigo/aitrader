@@ -67,6 +67,7 @@ class ICBackwaterArbitrageStrategy(CtaTemplate):
     # 资金管理
     position_ratio = 0.8            # 仓位比例
     cash_reserve = 0.2              # 现金预留比例
+    capital = 1000000
     
     parameters = [
         "spot_symbol", "futures_symbol",

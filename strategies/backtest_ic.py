@@ -78,7 +78,7 @@ def download_ic_data(symbol: str = "IC0", start_date: str = "20230101", end_date
         logger.exception(f"下载失败：{e}")
         return pd.DataFrame()
 
-def download_500etf_data(start_date: str, end_date: str) -> pd.DataFrame:
+def download_500etf_data_em(start_date: str, end_date: str) -> pd.DataFrame:
     """
     下载 500ETF 数据作为现货代理
 
@@ -127,6 +127,45 @@ def download_500etf_data(start_date: str, end_date: str) -> pd.DataFrame:
 
     except Exception as e:
         logger.exception(f"下载 ETF 数据失败：{e}")
+        return pd.DataFrame()
+
+
+def download_csi500_index_data(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    下载 中证500 指数日线历史行情数据
+
+    :param start_date: 开始日期，格式 YYYYMMDD 或 YYYY-MM-DD
+    :param end_date: 结束日期，格式 YYYYMMDD 或 YYYY-MM-DD
+    """
+    logger.info("下载 中证500 指数数据...")
+
+    # 统一为 YYYYMMDD 格式
+    start = start_date.replace("-", "")
+    end = end_date.replace("-", "")
+
+    try:
+        # 使用 stock_zh_index_daily 接口
+        df = _retry_akshare(
+            ak.stock_zh_index_daily,
+            symbol="sh000905",  # 中证500 指数代码
+        )
+
+        if df.empty:
+            logger.warning("获取中证500指数数据为空")
+            return pd.DataFrame()
+
+        # 确保日期列为 datetime 类型
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+
+        # 过滤日期范围
+        start_dt = pd.to_datetime(start, format="%Y%m%d")
+        end_dt = pd.to_datetime(end, format="%Y%m%d")
+        df = df[(df["date"] >= start_dt) & (df["date"] <= end_dt)]
+
+        return df
+
+    except Exception as e:
+        logger.exception(f"下载中证500指数数据失败：{e}")
         return pd.DataFrame()
 
 
@@ -301,12 +340,30 @@ if __name__ == "__main__":
     # )
     
     # 方式 2: 先下载数据再回测
-    df_futures = download_ic_data("IC0", START_DATE, END_DATE)
-    if not df_futures.empty:
-        import_to_vnpy(df_futures, "IC2406", Exchange.CFFEX)
+    # df_futures = download_ic_data("IC0", START_DATE, END_DATE)
+    # if not df_futures.empty:
+    #     import_to_vnpy(df_futures, "IC2406", Exchange.CFFEX)
 
-    df_etf = download_500etf_data(START_DATE, END_DATE)
-    if not df_etf.empty:
-        df_etf = df_etf.rename(columns={'开盘': '开盘价', '收盘': '收盘价', '最高': '最高价', '最低': '最低价'})
+    # df_etf = download_500etf_data(START_DATE, END_DATE)
+    # if not df_etf.empty:
+    #     df_etf = df_etf.rename(columns={'开盘': '开盘价', '收盘': '收盘价', '最高': '最高价', '最低': '最低价'})
+    #     import_to_vnpy(df_etf, "510500", Exchange.SSE)
 
-        import_to_vnpy(df_etf, "510500", Exchange.SSE)
+    # 下载中证500指数行情
+    # df_index = download_csi500_index_data(START_DATE, END_DATE)
+    # if df_index.empty:
+    #     logger.warning("中证500指数数据为空，退出")
+    # else:
+
+    csv_path = Path("data/csi500_index.csv")
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    # df_index.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    # logger.info(f"已保存中证500数据到：{csv_path}")
+
+    # 从 CSV 重新加载并入库
+    # df_load = pd.read_csv(csv_path, parse_dates=["date", "date"], dtype=str)
+    df_load = pd.read_csv(csv_path, dtype=str)
+    df_load = df_load.rename(columns={'open': '开盘价', 'close': '收盘价', 'high': '最高价', 'low': '最低价', 'volume': '成交量'})
+
+    import_to_vnpy(df_load, "510500", Exchange.SSE)
+    logger.info("中证500指数数据已入库")

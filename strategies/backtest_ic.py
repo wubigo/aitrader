@@ -40,14 +40,19 @@ def download_ic_data(symbol: str = "IC0", start_date: str = "20230101", end_date
     logger.info(f"下载 IC 期货数据 {symbol}...")
     
     try:
-        df = ak.futures_main_sina(
-            symbol=symbol,
-            trade_date=start_date,
-        )
-        
+        # 新版 akshare 可能不再支持 trade_date，一般使用 start_date/end_date 或仅 symbol
+        try:
+            df = ak.futures_main_sina(
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except TypeError:
+            df = ak.futures_main_sina(symbol=symbol)
+
         # 如果是获取历史连续数据，使用不同的接口
         # 这里简化处理，实际需要调用正确的接口
-        
+
         if df.empty:
             logger.warning("获取数据为空")
             return pd.DataFrame()
@@ -93,10 +98,25 @@ def import_to_vnpy(df: pd.DataFrame, symbol: str, exchange: Exchange):
     
     utc_8 = timezone(timedelta(hours=8))
     database = get_database()
-    
+
+    # 兼容不同字段名
+    if '日期' in df.columns and 'date' not in df.columns:
+        df = df.rename(columns={'日期': 'date'})
+    if '交易日' in df.columns and 'date' not in df.columns:
+        df = df.rename(columns={'交易日': 'date'})
+
     bars = []
-    for _, row in df.iterrows():
-        dt = pd.to_datetime(row.get('date', row.get('交易日', row.index[0])))
+    for idx, row in df.iterrows():
+        date_raw = row.get('date', None)
+        if pd.isna(date_raw) or date_raw in ['', '日期', '交易日']:
+            date_raw = idx
+
+        try:
+            dt = pd.to_datetime(date_raw)
+        except Exception as e:
+            logger.warning(f"跳过日期解析失败：{date_raw}，原因：{e}")
+            continue
+
         if getattr(dt, "tz", None) is None:
             dt = dt.tz_localize(utc_8)
         dt = dt.to_pydatetime()
@@ -235,18 +255,18 @@ if __name__ == "__main__":
     END_DATE = "20241231"
     
     # 方式 1: 直接回测（如果数据已在数据库中）
-    engine, result_df, stats = run_backtest(
-        symbol=SYMBOL,
-        start=datetime(2023, 1, 1),
-        end=datetime(2024, 12, 31),
-        initial_capital=1000000.0,
-    )
+    # engine, result_df, stats = run_backtest(
+    #     symbol=SYMBOL,
+    #     start=datetime(2023, 1, 1),
+    #     end=datetime(2024, 12, 31),
+    #     initial_capital=1000000.0,
+    # )
     
     # 方式 2: 先下载数据再回测
-    # df_futures = download_ic_data("IC0", START_DATE, END_DATE)
-    # if not df_futures.empty:
-    #     import_to_vnpy(df_futures, "IC2406", Exchange.CFFEX)
-    #     
-    #     df_etf = download_500etf_data(START_DATE, END_DATE)
-    #     if not df_etf.empty:
-    #         import_to_vnpy(df_etf, "510500", Exchange.SSE)
+    df_futures = download_ic_data("IC0", START_DATE, END_DATE)
+    if not df_futures.empty:
+        import_to_vnpy(df_futures, "IC2406", Exchange.CFFEX)
+
+        df_etf = download_500etf_data(START_DATE, END_DATE)
+        if not df_etf.empty:
+            import_to_vnpy(df_etf, "510500", Exchange.SSE)

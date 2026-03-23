@@ -12,6 +12,8 @@ IC 股指期货滚贴水套利策略
 - IH: 上证 50 股指期货
 - IM: 中证 1000 股指期货
 """
+import logging
+
 from vnpy_ctastrategy import (
     CtaTemplate,
     BarGenerator,
@@ -94,6 +96,9 @@ class ICBackwaterArbitrageStrategy(CtaTemplate):
         
         # K 线管理
         self.bg = BarGenerator(self.on_bar)
+        # size是历史数据的起始日期到回测开始日期(主力合约2406)的日线数据量
+        # 例如start_date=2023-01-01, 回测的开始日期是IC2406
+        # select count(*) from bardata where datatime(2023-01-01,2024-06-01) and exchange=CFFEX
         self.am = ArrayManager(size=100)
         
         # 持仓数据
@@ -326,7 +331,7 @@ class ICBackwaterArbitrageStrategy(CtaTemplate):
         
         if not self.am.inited:
             return
-        
+        logging.info(f"更新价格{bar.datetime}")
         # 更新价格
         self.futures_price = bar.close_price
         

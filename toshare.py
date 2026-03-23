@@ -1,16 +1,17 @@
 import tushare as ts
 import pandas as pd
+import os
 
 
 # df = pro.daily(ts_code='000001.SZ', start_date='20180701', end_date='20180718')
 
 # 1. 设置你的 Tushare Token
 # 将 'your_token_here' 替换为你在 Tushare 官网获取的真实 Token
-token = '1f832aa50ab6eda9166cf7ead1191121540c1eba28c7fb978'
+token = os.getenv("TOSHARE_API_KEY"),
 TUSHARE_TOKEN = token
-STOCK_CODE = '600519.SH'  # 股票代码
-START_DATE = '20200101'  # 回测开始日期
-END_DATE = '20200201'  # 回测结束日期
+STOCK_CODE = '000905'  # 股票代码
+START_DATE = '20230101'  # 回测开始日期
+END_DATE = '20241231'  # 回测结束日期
 # ts.set_token(token)
 #
 # # 2. 初始化 Pro API
@@ -43,7 +44,7 @@ def get_data_from_tushare():
     pro = ts.pro_api()
 
     # 获取复权数据 (前复权)
-    df = pro.daily(ts_code=STOCK_CODE, start_date=START_DATE, end_date=END_DATE, adj='qfq')
+    df = pro.index_daily(ts_code=STOCK_CODE, start_date=START_DATE, end_date=END_DATE, adj='qfq')
 
     # 数据清洗与格式转换 (关键步骤)
     df = df.sort_values('trade_date')  # 按时间升序排列
@@ -64,7 +65,9 @@ def get_data_from_tushare():
 
 df = get_data_from_tushare()
 
+print(df)
+
 encoding = 'utf-8-sig'
-filename = '600519_SH_2024.csv'
+filename = f("data/{STOCK_CODE}.csv")
 df.to_csv(filename, index=False, encoding='utf-8-sig')
 

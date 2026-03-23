@@ -19,10 +19,12 @@ from vnpy.trader.object import BarData
 from vnpy_ctastrategy.backtesting import BacktestingEngine
 from vnpy_ctastrategy.base import BacktestingMode
 
-from ic_backwater_strategy import ICBackwaterArbitrageStrategy
-from utils.backtest_logger import backup_dataframe
+from strategies.ic_backwater_strategy import ICBackwaterArbitrageStrategy
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +75,7 @@ def download_ic_data(symbol: str = "IC0", start_date: str = "20230101", end_date
     except Exception as e:
         logger.exception(f"下载失败：{e}")
         return pd.DataFrame()
+
 
 def download_500etf_data_em(start_date: str, end_date: str) -> pd.DataFrame:
     """
@@ -168,7 +171,7 @@ def download_csi500_index_data(start_date: str, end_date: str) -> pd.DataFrame:
 def import_to_vnpy(df: pd.DataFrame, symbol: str, exchange: Exchange):
     """导入数据到 vn.py"""
     from datetime import timezone, timedelta
-    
+
     utc_8 = timezone(timedelta(hours=8))
     database = get_database()
 
@@ -193,7 +196,7 @@ def import_to_vnpy(df: pd.DataFrame, symbol: str, exchange: Exchange):
         if getattr(dt, "tz", None) is None:
             dt = dt.tz_localize(utc_8)
         dt = dt.to_pydatetime()
-        
+
         # 根据实际列名调整
         bar = BarData(
             symbol=symbol,
@@ -209,16 +212,16 @@ def import_to_vnpy(df: pd.DataFrame, symbol: str, exchange: Exchange):
             gateway_name="AKSHARE",
         )
         bars.append(bar)
-    
+
     database.save_bar_data(bars)
     logger.info(f"入库完成：{symbol}, 共 {len(bars)} 条")
 
 
 def run_backtest(
-    symbol: str = "IC2406.CFFEX",
-    start: datetime = None,
-    end: datetime = None,
-    initial_capital: float = 1000000.0,
+        symbol: str = "IC2406.CFFEX",
+        start: datetime = None,
+        end: datetime = None,
+        initial_capital: float = 1000000.0,
 ):
     """
     运行回测
@@ -232,14 +235,14 @@ def run_backtest(
         start = datetime(2023, 1, 1)
     if end is None:
         end = datetime(2024, 12, 31)
-    
+
     engine = BacktestingEngine()
-    
+
     # Initialize variables to avoid assignment errors
     df = pd.DataFrame()
     statistics = {}
     backtest_error = None
-    
+
     try:
 
         engine.set_parameters(
@@ -305,7 +308,7 @@ def run_backtest(
             end_date=end.strftime("%Y-%m-%d"),
             strategy_name="IC 滚贴水套利",
         )
-        logger.info(f"回测日志已保存到：{log_filename}")
+
     except Exception as log_ex:
         logger.exception(f"保存回测日志失败：{log_ex}")
 
@@ -324,9 +327,9 @@ def run_backtest(
 if __name__ == "__main__":
     # 配置
     SYMBOL = "IC2406.CFFEX"
-    START_DATE = "20230101"
-    END_DATE = "20241231"
-    
+    START_DATE = "20250101"
+    END_DATE = "20261231"
+
     # 方式 1: 直接回测（如果数据已在数据库中）
     engine, result_df, stats = run_backtest(
         symbol=SYMBOL,
@@ -334,9 +337,10 @@ if __name__ == "__main__":
         end=datetime(2024, 12, 31),
         initial_capital=1000000.0,
     )
-    
+
     # 方式 2: 先下载数据再回测
     # df_futures = download_ic_data("IC0", START_DATE, END_DATE)
+    # backup_dataframe(df_futures, "股指期货-IC0-2025.csv")
     # if not df_futures.empty:
     #     import_to_vnpy(df_futures, "IC2406", Exchange.CFFEX)
 
@@ -346,19 +350,19 @@ if __name__ == "__main__":
     #     import_to_vnpy(df_etf, "510500", Exchange.SSE)
 
     # 下载中证500指数行情
-    df_index = download_csi500_index_data(START_DATE, END_DATE)
-    if df_index.empty:
-        logger.warning("中证500指数数据为空，退出")
-    else:
-        backup_dataframe(df_index, "csi500_index.csv")
+    # df_index = download_csi500_index_data(START_DATE, END_DATE)
+    # if df_index.empty:
+    #     logger.warning("中证500指数数据为空，退出")
+    # else:
+    #     backup_dataframe(df_index, "csi500_index.csv")
 
-        # 从 CSV 重新加载并入库
-        # df_load = pd.read_csv(csv_path, parse_dates=["date", "日期", "交易日"], dtype=str)
-        # df_load = df_load.rename(columns={'开盘': '开盘价', '收盘': '收盘价', '最高': '最高价', '最低': '最低价', '成交量': '成交量'})
-        # if 'date' not in df_load.columns:
-        #     if '日期' in df_load.columns:
-        #         df_load = df_load.rename(columns={'日期': 'date'})
-        #     elif '交易日' in df_load.columns:
-        #         df_load = df_load.rename(columns={'交易日': 'date'})
-        # import_to_vnpy(df_load, "510500", Exchange.SSE)
-        # logger.info("中证500指数数据已入库")
+    # 从 CSV 重新加载并入库
+    # df_load = pd.read_csv(csv_path, parse_dates=["date", "日期", "交易日"], dtype=str)
+    # df_load = df_load.rename(columns={'开盘': '开盘价', '收盘': '收盘价', '最高': '最高价', '最低': '最低价', '成交量': '成交量'})
+    # if 'date' not in df_load.columns:
+    #     if '日期' in df_load.columns:
+    #         df_load = df_load.rename(columns={'日期': 'date'})
+    #     elif '交易日' in df_load.columns:
+    #         df_load = df_load.rename(columns={'交易日': 'date'})
+    # import_to_vnpy(df_load, "510500", Exchange.SSE)
+    # logger.info("中证500指数数据已入库")

@@ -23,6 +23,7 @@ from vnpy_ctastrategy import (
 )
 from vnpy.trader.constant import Direction, Offset
 from typing import Dict, List, Optional
+from datetime import datetime, timedelta
 import numpy as np
 
 
@@ -160,31 +161,44 @@ class ICBackwaterArbitrageStrategy(CtaTemplate):
         # 简化处理：使用 ETF 价格作为现货代理
         return self.spot_price
     
-    def update_contract_info(self):
-        """更新合约信息"""
-        # 从 vt_symbol 解析合约月份
-        # 例如："IC2406.SFF" -> "2406"
-        parts = self.vt_symbol.split(".")
-        if len(parts) >= 1:
-            symbol_part = parts[0]
-            # 提取数字部分作为合约月份
-            month_str = ''.join(filter(str.isdigit, symbol_part))
-            if len(month_str) >= 4:
-                self.contract_month = month_str[-4:]
-        
-        # 计算下一合约月份
-        if self.contract_month:
-            year = int(self.contract_month[:2])
-            month = int(self.contract_month[2:])
-            
-            # 下月合约
-            next_month = month + 1
-            next_year = year
-            if next_month > 12:
-                next_month = 1
-                next_year += 1
-            
-            self.next_contract_month = f"{next_year:02d}{next_month:02d}"
+    def calculate_contract_month(self, dt: datetime) -> str:
+        """按当前日期计算主力合约月份（IC 期货季月）"""
+        quarter_months = [3, 6, 9, 12]
+        year = dt.year
+
+        for m in quarter_months:
+            if dt.month <= m:
+                contract_month = m
+                break
+        else:
+            # 12 月之后按下一年 03 月
+            contract_month = 3
+            year = year + 1
+
+        return f"{year % 100:02d}{contract_month:02d}"
+
+    def next_contract_month_from(self, contract_month: str) -> str:
+        """根据当前合约获取下一个合约（月+3）"""
+        if len(contract_month) != 4:
+            return ""
+
+        year = int(contract_month[:2])
+        month = int(contract_month[2:])
+
+        month += 3
+        if month > 12:
+            month -= 12
+            year += 1
+
+        return f"{year:02d}{month:02d}"
+
+    def update_contract_info(self, dt: datetime = None):
+        """更新合约信息（动态按日期计算）"""
+        if dt is None:
+            dt = datetime.now()
+
+        self.contract_month = self.calculate_contract_month(dt)
+        self.next_contract_month = self.next_contract_month_from(self.contract_month)
     
     def check_open_condition(self) -> bool:
         """检查开仓条件"""
@@ -330,6 +344,9 @@ class ICBackwaterArbitrageStrategy(CtaTemplate):
         if self.is_position_opened and self.entry_date:
             self.holding_days = (bar.datetime - self.entry_date).days
         
+        # 动态更新合约信息
+        self.update_contract_info(bar.datetime)
+
         # 交易逻辑
         if not self.is_position_opened:
             # 检查开仓条件
@@ -402,3 +419,5 @@ def calculate_annualized_basis(basis: float, days_to_expiry: int) -> float:
     if days_to_expiry <= 0:
         return 0.0
     return basis * (365 / days_to_expiry)
+
+

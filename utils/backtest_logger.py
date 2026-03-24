@@ -250,5 +250,6 @@ def backup_dataframe(df: pd.DataFrame, filename: str, index: bool = False, encod
     output_path = Path(__file__).resolve().parents[1] / "data"
     output_path.mkdir(parents=True, exist_ok=True)
     output_path = Path(output_path) / filename
-    df.to_csv(output_path, index=index, encoding=encoding)
+    header = not output_path.exists()
+    df.to_csv(output_path, mode="a", header=header, index=index, encoding=encoding)
     logger.info(f"已保存数据到：{output_path}")

@@ -215,3 +215,22 @@ df_processed = processor.standardize(df_processed, cols)
 signal = MomentumSignal.generate_signals(df_processed, 'momentum_60d')
 ```
 
+## 期指滚贴水策略 
+
+Stock index futures rolling discount arbitrage is a market-neutral strategy that
+exploits mispricing between the current spot index and futures contracts, specifically
+when the futures contract is trading at a significant discount to the fair 
+value (backwardation), and profit is locked in by "rolling" the position across 
+expiration dates rather than closing it
+
+
+A 股股指期货（IF/IC/IH/IM）的理论价格 ≈ 现货指数 + 持仓资金利息 − 成分股股息，实际价格经常会低于现货（贴水）。
+
+滚贴水，就是持续买入处于贴水状态的近月/主力期指合约，临近到期或贴水修复后平仓(移仓)，再接着买下一张仍贴水的合约，
+把贴水当作「长期利息」去吃。
+
+年化贴水率（粗略估算）：
+
+年化 ≈ 贴水点数 ÷ 指数点位 ÷ 剩余天数 × 365。
+
+经验上，投资者会在「年化贴水明显高于无风险利率」时才愿意系统性滚动

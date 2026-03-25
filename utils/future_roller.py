@@ -115,16 +115,16 @@ def monitor_all_basis(interval=60):
                 status = "✅ 轻微贴水"
             else:
                 status = "➡️ 基本平水"
-
+        point = (spot_price - fut_price) if (fut_price is not None and spot_price is not None) else None
         results[code] = {
             'code': code,
             '期货价': fut_price,
             '现货价': spot_price,
-            '贴水点数': (spot_price - fut_price) if (fut_price is not None and spot_price is not None) else None,
-            '年化贴水%': ann_basis,
+            '贴水点数': f"{point:.3f}",
+            '年化贴水%': f"{ann_basis:.3f}%",
             '剩余天数': days,
             '状态': status,
-            'timestamp':datetime.now()
+            'timestamp': datetime.now()
         }
 
         print(f"{code}: 年化贴水 {ann_basis:.2f}% {status} | 期货:{fut_price:.2f} 现货:{spot_price:.2f}")

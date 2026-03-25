@@ -38,10 +38,11 @@ END_DATE = '20241231'  # 回测结束日期
 #
 # print(f"数据已成功保存为 {filename}")
 
-
+ts.set_token(TUSHARE_TOKEN)
+pro = ts.pro_api()
 def get_data_from_tushare():
-    ts.set_token(TUSHARE_TOKEN)
-    pro = ts.pro_api()
+
+
 
     # 获取复权数据 (前复权)
     df = pro.index_daily(ts_code=STOCK_CODE, start_date=START_DATE, end_date=END_DATE, adj='qfq')
@@ -63,8 +64,9 @@ def get_data_from_tushare():
     return df
 
 
-df = get_data_from_tushare()
+# df = get_data_from_tushare()
 
+df = pro.rt_idx_min(ts_code='000001.SH', freq='1MIN')
 print(df)
 
 encoding = 'utf-8-sig'

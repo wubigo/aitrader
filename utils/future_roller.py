@@ -66,6 +66,13 @@ def get_main_contract_expiry(symbol, exchange='CFFEX'):
 
 def calc_annualized_basis(fut_price, spot_price, days):
     """计算年化贴水率"""
+    # Handle pandas Series or None values
+    try:
+        if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0:
+            return None
+    except (TypeError, ValueError):
+        return None
+    
     if fut_price is None or spot_price is None or days <= 0:
         return None
     basis_ratio = (spot_price - fut_price) / spot_price
@@ -78,6 +85,7 @@ def monitor_all_basis(interval=60):
     print("🚀 股指期货年化贴水实时监控启动 (每{}s刷新)".format(interval))
     print("=" * 80)
 
+    code = "IC0"
     year, month = 2026, 6
     last_trading_day = get_last_trading_day(year, month)
 
@@ -97,7 +105,7 @@ def monitor_all_basis(interval=60):
         ann_basis = calc_annualized_basis(fut_price, spot_price, days)
 
         status = ""
-        if ann_basis:
+        if ann_basis is not None:
             if ann_basis > 8:
                 status = "🚨 厚贴水-建仓!"
             elif ann_basis > 6:
@@ -110,13 +118,13 @@ def monitor_all_basis(interval=60):
         results[code] = {
             '期货价': fut_price,
             '现货价': spot_price,
-            '贴水点数': spot_price - fut_price if spot_price and fut_price else None,
+            '贴水点数': (spot_price - fut_price) if (fut_price is not None and spot_price is not None) else None,
             '年化贴水%': ann_basis,
             '剩余天数': days,
             '状态': status
         }
 
-        print(f"{IC0}: 年化贴水 {ann_basis:.2f}% {status} | 期货:{fut_price:.2f} 现货:{spot_price:.2f}")
+        print(f"{code}: 年化贴水 {ann_basis:.2f}% {status} | 期货:{fut_price:.2f} 现货:{spot_price:.2f}")
 
         # 保存到CSV（可选）
         df = pd.DataFrame(results).T
@@ -136,8 +144,8 @@ def get_future_price():
     futures_realtime = futures_realtime[["symbol", "name", "trade", "preclose", "tradedate", "volume", "timestamp"]]
     backup_dataframe(futures_realtime, f"期货品种-{symbol}-交易合约实时数据-futures_zh_realtime-{today}.csv")
     if not futures_realtime.empty:
-        return futures_realtime.head()["trade"]
-    return ""
+        return float(futures_realtime.iloc[0]["trade"])
+    return None
 
 
 def get_spot_price():
@@ -147,8 +155,8 @@ def get_spot_price():
     df["timestamp"] = pd.Timestamp.now()
     backup_dataframe(df, f"中证指数-{symbol}-实时行情-Ashare-{today}.csv")
     if not df.empty:
-        return df["close"]
-    return ""
+        return float(df.iloc[0]["close"])
+    return None
 
 
 def get_third_friday(year, month):

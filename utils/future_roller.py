@@ -11,6 +11,7 @@ from chinese_calendar import is_workday, is_holiday  # 中国节假日判断库
 import akshare as ak
 from Ashare import get_price
 from utils.backtest_logger import backup_dataframe
+from backtest_logger import backup_dataframe
 
 warnings.filterwarnings('ignore')
 
@@ -116,19 +117,21 @@ def monitor_all_basis(interval=60):
                 status = "➡️ 基本平水"
 
         results[code] = {
+            'code': code,
             '期货价': fut_price,
             '现货价': spot_price,
             '贴水点数': (spot_price - fut_price) if (fut_price is not None and spot_price is not None) else None,
             '年化贴水%': ann_basis,
             '剩余天数': days,
-            '状态': status
+            '状态': status,
+            'timestamp':datetime.now()
         }
 
         print(f"{code}: 年化贴水 {ann_basis:.2f}% {status} | 期货:{fut_price:.2f} 现货:{spot_price:.2f}")
 
         # 保存到CSV（可选）
         df = pd.DataFrame(results).T
-        df.to_csv(f"basis_monitor_{datetime.now().strftime('%Y%m%d')}.csv")
+        backup_dataframe(df, f"{code}-年化贴水-{datetime.now().strftime('%Y%m%d')}.csv")
 
         time.sleep(interval)
 

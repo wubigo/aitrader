@@ -8,23 +8,12 @@ import time
 import warnings
 import calendar
 from chinese_calendar import is_workday, is_holiday  # 中国节假日判断库
-
+import akshare as ak
 from Ashare import get_price
+from utils.backtest_logger import backup_dataframe
+
 warnings.filterwarnings('ignore')
 
-
-def get_price(secid):
-    """获取东方财富实时价格"""
-    url = f"https://push2.eastmoney.com/api/qt/stock/trends2/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&ndays=1"
-    try:
-        resp = requests.get(url, timeout=10)
-        data = resp.json()
-        if data.get('data') and data['data'].get('trends'):
-            latest = data['data']['trends'][0].split(',')
-            return float(latest[1])  # 最新成交价
-    except:
-        logging.exception(f"get_price")
-    return None
 
 def get_remaining_days(expiry_str):
     """计算剩余天数"""
@@ -83,20 +72,27 @@ def calc_annualized_basis(fut_price, spot_price, days):
     annualized = basis_ratio * 365 / days * 100
     return annualized
 
+
 def monitor_all_basis(interval=60):
     """监控所有股指年化贴水"""
     print("🚀 股指期货年化贴水实时监控启动 (每{}s刷新)".format(interval))
     print("=" * 80)
-    
+
+    year, month = 2026, 6
+    last_trading_day = get_last_trading_day(year, month)
+
     while True:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n[{now}] 更新数据...")
-        
+
         results = {}
 
-        fut_price = get_price(info['fut_secid'])
-        spot_price = get_price(f"1.{info['spot_code']}")
-        days = get_remaining_days(info['expiry'])
+        print(f"最后交易日（含顺延）: {last_trading_day}")
+
+        days = get_remaining_days(last_trading_day.strftime("%Y%m%d"))
+
+        fut_price = get_future_price()
+        spot_price = get_spot_price()
 
         ann_basis = calc_annualized_basis(fut_price, spot_price, days)
 
@@ -120,13 +116,14 @@ def monitor_all_basis(interval=60):
             '状态': status
         }
 
-        print(f"{code}: 年化贴水 {ann_basis:.2f}% {status} | 期货:{fut_price:.2f} 现货:{spot_price:.2f}")
-        
+        print(f"{IC0}: 年化贴水 {ann_basis:.2f}% {status} | 期货:{fut_price:.2f} 现货:{spot_price:.2f}")
+
         # 保存到CSV（可选）
         df = pd.DataFrame(results).T
         df.to_csv(f"basis_monitor_{datetime.now().strftime('%Y%m%d')}.csv")
-        
+
         time.sleep(interval)
+
 
 def get_future_price():
     symbol = "中证500指数期货"
@@ -139,8 +136,9 @@ def get_future_price():
     futures_realtime = futures_realtime[["symbol", "name", "trade", "preclose", "tradedate", "volume", "timestamp"]]
     backup_dataframe(futures_realtime, f"期货品种-{symbol}-交易合约实时数据-futures_zh_realtime-{today}.csv")
     if not futures_realtime.empty:
-        return futures_realtime.head["trade"]
+        return futures_realtime.head()["trade"]
     return ""
+
 
 def get_spot_price():
     symbol = "sh000905"
@@ -173,23 +171,11 @@ def get_last_trading_day(year, month):
         d += timedelta(days=1)
 
 
-
-
-
 # 运行监控
 if __name__ == "__main__":
 
-    year, month = 2026, 6
-    last_trading_day = get_last_trading_day(year, month)
-    print(f"最后交易日（含顺延）: {last_trading_day}")
-
-
-    fut = get_future_price
-    spot = get_spot_price()
-    print(f"{code}: 期货 {fut}, 现货 {spot}")
-    
     print("\n启动实时监控 (Ctrl+C 停止)")
     try:
-        monitor_all_basis(interval=60*30)  # 每半小时刷新一次
+        monitor_all_basis(interval=60 * 30)  # 每半小时刷新一次
     except KeyboardInterrupt:
         print("\n监控停止")

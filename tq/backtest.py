@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, timedelta
 from datetime import datetime
 import pandas as pd
 from tqsdk import TqApi, TqAuth, TqBacktest, TargetPosTask
@@ -22,10 +22,10 @@ quote = api.get_quote(symbol)
 # 获得 IC主连 日K线的引用
 klines = api.get_kline_serial(symbol, 24*60 * 60, data_length=100)
 
-
-first = datetime.fromtimestamp(klines["datetime"].iloc[0] / 1e9)
-last = datetime.fromtimestamp(klines["datetime"].iloc[-1] / 1e9)
-
+first = pd.to_datetime(klines["datetime"].iloc[0], unit="ns")
+last = pd.to_datetime(klines["datetime"].iloc[-1], unit="ns")
+# first = datetime.fromtimestamp(klines["datetime"].iloc[0] / 1e9)
+# last = datetime.fromtimestamp(klines["datetime"].iloc[-1] / 1e9)
 print(f"{first}   -- {last}")
 
 # tick = api.get_tick_serial(symbol, data_length= 200)
@@ -38,10 +38,11 @@ while True:
     if api.is_changing(klines.iloc[-1], "datetime"):
         # print(klines.close.iloc[-5:])
         # 将 datetime 列从 float (纳秒时间戳) 转换为 pandas Timestamp
-        if pd.api.types.is_numeric_dtype(klines['datetime']):
-            klines['datetime'] = pd.to_datetime(klines['datetime'] / 1e9)
-        else:
-            klines['datetime'] = pd.to_datetime(klines['datetime'])
+        # if pd.api.types.is_numeric_dtype(klines['datetime']):
+        #     klines['datetime'] = pd.to_datetime(klines['datetime'] / 1e9)
+        # else:
+        #     klines['datetime'] = pd.to_datetime(klines['datetime'])
+        klines["datetime"] = pd.to_datetime(klines["datetime"], unit="ns")
         backup_dataframe(klines, "tq-backtest-log.csv", mode='w')
         # print(klines.iloc[-1])
         d = klines["datetime"].iloc[-1]

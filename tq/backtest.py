@@ -1,67 +1,81 @@
 import os
-from datetime import date, timedelta
-from datetime import datetime
+from datetime import date
 import pandas as pd
-from tqsdk import TqApi, TqAuth, TqBacktest, TargetPosTask
+from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished
 from utils.backtest_logger import backup_dataframe
+
+
+# ================== 配置区域 ==================
+symbol = "KQ.m@CFFEX.IC"  # IC 主连合约（推荐写法）
+duration = 24*60*60  # 日K线
+data_length = 20  # 窗口大小，建议 1000~5000，根据内存调整
+
+start_dt = date(2023, 1, 1)  # 回测开始日期（可跨多个合约到期）
+end_dt = date(2023, 3, 30)  # 回测结束日期
+# ============================================
+
 
 # 从环境变量获取账号密码
 token = os.getenv("TQ_ID")
 pa = os.getenv("TQ_PASS")
 
-'''
-如果当前价格大于5分钟K线的MA15则开多仓
-如果小于则平仓
-回测从 2018-05-01 到 2018-10-01
-'''
-# 在创建 api 实例时传入 TqBacktest 就会进入回测模式
-api = TqApi(debug="tq-debug.json", backtest=TqBacktest(start_dt=date(2025, 12, 26), end_dt=date(2026, 3, 30)), auth=TqAuth(token, pa))
-symbol = api.query_cont_quotes(product_id="IC").pop()
-symbol_info = api.query_symbol_info(symbol)
-expire_datetime = symbol_info.iloc[-1]["expire_datetime"]
-print(f"{symbol} expire_datetime:{datetime.fromtimestamp(expire_datetime)}")
-# 获得 IC主连 日K线的引用
-klines = api.get_kline_serial(symbol, 24*60 * 60, data_length=5)
+# 1. 创建回测 API
+api = TqApi(
+    backtest=TqBacktest(start_dt=start_dt,end_dt=end_dt),
+    auth=TqAuth(token, pa)
+)
 
-first = pd.to_datetime(klines["datetime"].iloc[0], unit="ns")
-last = pd.to_datetime(klines["datetime"].iloc[-1], unit="ns")
-# first = datetime.fromtimestamp(klines["datetime"].iloc[0] / 1e9)
-# last = datetime.fromtimestamp(klines["datetime"].iloc[-1] / 1e9)
-print(f"{first}--{last}")
-# klines["datetime"] = pd.to_datetime(klines["datetime"], unit="ns")
-# backup_dataframe(klines, "tq-backtest-log.csv", mode='w')
+# 订阅主连 K 线 和 Quote（用于监控主力切换）
+klines = api.get_kline_serial(symbol, duration, data_length=data_length)
+quote = api.get_quote(symbol)  # 用于获取 underlying_symbol（当前实际主力合约）
 
-# tick = api.get_tick_serial(symbol, data_length= 200)
+full_klines = []  # 累积所有新增 K 线片段
+last_dt = 0  # 上次已保存的 datetime（纳秒时间戳）
+current_underlying = ""  # 当前主力合约代码
 
-# 创建 m1901 的目标持仓 task，该 task 负责调整 m1901 的仓位到指定的目标仓位
-# target_pos = TargetPosTask(api, symbol)
+print(f"开始回测主连合约: {symbol}，周期: {duration}秒")
 
-while True:
-    api.wait_update()
-    if api.is_changing(klines.iloc[-1], "datetime"):
-        symbol_new = api.query_cont_quotes(product_id="IC").pop()
-        if symbol_new != symbol:
-            symbol = symbol_new
-            symbol_info = api.query_symbol_info(symbol)
-            expire_datetime = symbol_info.iloc[-1]["expire_datetime"]
-            print(f"{symbol} expire_datetime:{datetime.fromtimestamp(expire_datetime)}")
-            # klines = api.get_kline_serial(symbol, 24 * 60 * 60, data_length=5)
+try:
+    while True:
+        api.wait_update()
 
+        # ================== 监控主力合约切换 ==================
+        if api.is_changing(quote, "underlying_symbol"):
+            new_underlying = quote.underlying_symbol
+            print(f"【主力切换】{current_underlying or '开始'} → {new_underlying}  | 时间: {quote.datetime}")
+            current_underlying = new_underlying
 
-        # print(klines.close.iloc[-5:])
-        # 将 datetime 列从 float (纳秒时间戳) 转换为 pandas Timestamp
-        # if pd.api.types.is_numeric_dtype(klines['datetime']):
-        #     klines['datetime'] = pd.to_datetime(klines['datetime'] / 1e9)
-        # else:
-        #     klines['datetime'] = pd.to_datetime(klines['datetime'])
-        klines["datetime"] = pd.to_datetime(klines["datetime"], unit="ns")
-        backup_dataframe(klines, "tq-backtest-log.csv")
-        # print(klines.iloc[-1])
-        # d = klines["datetime"].iloc[-1]
-        # print("新K线", d)
-        # print("新K线", datetime.fromtimestamp(klines.tail(1)["datetime"]))
+        # ================== 累积 K 线（按时间顺序去重） ==================
+        if api.is_changing(klines):
+            # 只取比上次更新的 K 线，避免重复
+            new_bars = klines[klines["datetime"] > last_dt]
 
+            if not new_bars.empty:
+                full_klines.append(new_bars.copy())
+                last_dt = klines.iloc[-1]["datetime"]
 
-api.close()
+                # 可选：打印进度
+                latest_time = pd.to_datetime(last_dt, unit='ns')
+                print(f"新增 {len(new_bars)} 根 K 线，最新时间: {latest_time}")
 
+except BacktestFinished:
+    print("\n回测自然结束，开始保存完整 K 线数据...")
 
+    if full_klines:
+        # 合并成一个完整的 DataFrame（自动按时间升序）
+        full_df = pd.concat(full_klines, ignore_index=True)
+        full_df["datetime"] = pd.to_datetime(full_df["datetime"], unit="ns")
+
+        # 保存文件（建议用 parquet 格式，体积更小、读取更快）
+        filename = f"IC主连_回测_{duration}s_{start_dt}_{end_dt}.csv"
+
+        backup_dataframe(full_df, filename)
+
+        print(f"✅ 保存完成！共 {len(full_df)} 根 K 线 →文件: {filename}")
+
+        print(f"   时间范围: {full_df['datetime'].iloc[0]} ~ {full_df['datetime'].iloc[-1]}")
+    else:
+        print("未获取到任何 K 线数据")
+
+finally:
+    api.close()

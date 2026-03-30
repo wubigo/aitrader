@@ -244,12 +244,12 @@ def quick_save_log(engine, symbol: str, start: str, end: str, **kwargs) -> str:
     )
 
 
-def backup_dataframe(df: pd.DataFrame, filename: str, index: bool = False, encoding: str = "utf-8-sig"):
+def backup_dataframe(df: pd.DataFrame, filename: str, index: bool = False, encoding: str = "utf-8-sig", mode: str = "a"):
     """保存 DataFrame 到项目根目录的 data 目录，创建目录后写文件。"""
     # 使用项目根目录 data 作为默认路径
     output_path = Path(__file__).resolve().parents[1] / "data"
     output_path.mkdir(parents=True, exist_ok=True)
     output_path = Path(output_path) / filename
     header = not output_path.exists()
-    df.to_csv(output_path, mode="a", header=header, index=index, encoding=encoding)
+    df.to_csv(output_path, mode=mode, header=header, index=index, encoding=encoding)
     logger.info(f"已保存数据到：{output_path}")

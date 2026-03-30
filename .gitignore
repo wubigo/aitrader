@@ -29,6 +29,7 @@
 **/.idea
 
 **/*.pyc
+**/*.csv
 
 # Gradle
 .idea/**/gradle.xml

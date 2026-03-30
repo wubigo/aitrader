@@ -20,7 +20,7 @@ symbol = api.query_cont_quotes(product_id="IC").pop()
 quote = api.get_quote(symbol)
 
 # 获得 IC主连 日K线的引用
-klines = api.get_kline_serial(symbol, 24*60 * 60, data_length=1000)
+klines = api.get_kline_serial(symbol, 24*60 * 60, data_length=100)
 
 
 first = datetime.fromtimestamp(klines["datetime"].iloc[0] / 1e9)
@@ -42,7 +42,7 @@ while True:
             klines['datetime'] = pd.to_datetime(klines['datetime'] / 1e9)
         else:
             klines['datetime'] = pd.to_datetime(klines['datetime'])
-        backup_dataframe(klines, "tq-backtest-log.csv")
+        backup_dataframe(klines, "tq-backtest-log.csv", mode='w')
         # print(klines.iloc[-1])
         d = klines["datetime"].iloc[-1]
         print("新K线", d)

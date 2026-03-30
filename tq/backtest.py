@@ -15,10 +15,11 @@ pa = os.getenv("TQ_PASS")
 回测从 2018-05-01 到 2018-10-01
 '''
 # 在创建 api 实例时传入 TqBacktest 就会进入回测模式
-api = TqApi(debug="tq-debug.json", backtest=TqBacktest(start_dt=date(2023, 1, 4), end_dt=date(2024, 12, 31)), auth=TqAuth(token, pa))
+api = TqApi(debug="tq-debug.json", backtest=TqBacktest(start_dt=date(2026, 1, 2), end_dt=date(2026, 3, 30)), auth=TqAuth(token, pa))
 symbol = api.query_cont_quotes(product_id="IC").pop()
-quote = api.get_quote(symbol)
-
+symbol_info = api.query_symbol_info(symbol)
+expire_datetime = symbol_info.iloc[-1]["expire_datetime"]
+print(f"{symbol} expire_datetime:{datetime.fromtimestamp(expire_datetime)}")
 # 获得 IC主连 日K线的引用
 klines = api.get_kline_serial(symbol, 24*60 * 60, data_length=100)
 

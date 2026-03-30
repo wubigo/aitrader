@@ -15,19 +15,21 @@ pa = os.getenv("TQ_PASS")
 回测从 2018-05-01 到 2018-10-01
 '''
 # 在创建 api 实例时传入 TqBacktest 就会进入回测模式
-api = TqApi(debug="tq-debug.json", backtest=TqBacktest(start_dt=date(2026, 1, 2), end_dt=date(2026, 3, 30)), auth=TqAuth(token, pa))
+api = TqApi(debug="tq-debug.json", backtest=TqBacktest(start_dt=date(2025, 12, 26), end_dt=date(2026, 3, 30)), auth=TqAuth(token, pa))
 symbol = api.query_cont_quotes(product_id="IC").pop()
 symbol_info = api.query_symbol_info(symbol)
 expire_datetime = symbol_info.iloc[-1]["expire_datetime"]
 print(f"{symbol} expire_datetime:{datetime.fromtimestamp(expire_datetime)}")
 # 获得 IC主连 日K线的引用
-klines = api.get_kline_serial(symbol, 24*60 * 60, data_length=100)
+klines = api.get_kline_serial(symbol, 24*60 * 60, data_length=5)
 
 first = pd.to_datetime(klines["datetime"].iloc[0], unit="ns")
 last = pd.to_datetime(klines["datetime"].iloc[-1], unit="ns")
 # first = datetime.fromtimestamp(klines["datetime"].iloc[0] / 1e9)
 # last = datetime.fromtimestamp(klines["datetime"].iloc[-1] / 1e9)
-print(f"{first}   -- {last}")
+print(f"{first}--{last}")
+# klines["datetime"] = pd.to_datetime(klines["datetime"], unit="ns")
+# backup_dataframe(klines, "tq-backtest-log.csv", mode='w')
 
 # tick = api.get_tick_serial(symbol, data_length= 200)
 
@@ -37,6 +39,15 @@ print(f"{first}   -- {last}")
 while True:
     api.wait_update()
     if api.is_changing(klines.iloc[-1], "datetime"):
+        symbol_new = api.query_cont_quotes(product_id="IC").pop()
+        if symbol_new != symbol:
+            symbol = symbol_new
+            symbol_info = api.query_symbol_info(symbol)
+            expire_datetime = symbol_info.iloc[-1]["expire_datetime"]
+            print(f"{symbol} expire_datetime:{datetime.fromtimestamp(expire_datetime)}")
+            # klines = api.get_kline_serial(symbol, 24 * 60 * 60, data_length=5)
+
+
         # print(klines.close.iloc[-5:])
         # 将 datetime 列从 float (纳秒时间戳) 转换为 pandas Timestamp
         # if pd.api.types.is_numeric_dtype(klines['datetime']):
@@ -44,10 +55,10 @@ while True:
         # else:
         #     klines['datetime'] = pd.to_datetime(klines['datetime'])
         klines["datetime"] = pd.to_datetime(klines["datetime"], unit="ns")
-        backup_dataframe(klines, "tq-backtest-log.csv", mode='w')
+        backup_dataframe(klines, "tq-backtest-log.csv")
         # print(klines.iloc[-1])
-        d = klines["datetime"].iloc[-1]
-        print("新K线", d)
+        # d = klines["datetime"].iloc[-1]
+        # print("新K线", d)
         # print("新K线", datetime.fromtimestamp(klines.tail(1)["datetime"]))
 
 

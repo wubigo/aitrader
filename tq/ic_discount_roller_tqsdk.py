@@ -44,6 +44,8 @@ def monitor_ic_basis(interval=1800):  # 默认 30 分钟（1800秒）
 
     # 订阅主连期货和现货指数
     fut_quote = api.get_quote(symbol)  # IC 主连
+
+
     spot_quote = api.get_quote(spot_sym)  # 中证500指数
 
     last_print_time = 0
@@ -63,11 +65,11 @@ def monitor_ic_basis(interval=1800):  # 默认 30 分钟（1800秒）
             spot_price = spot_quote.last_price
 
             # symbol = api.query_cont_quotes(product_id="IC").pop()
-            symbol_info = api.query_symbol_info(symbol)
-            underlying_symbol = symbol_info.iloc[-1]["underlying_symbol"]
-            symbol_info = api.query_symbol_info(underlying_symbol)
-            expire_rest_days = symbol_info.iloc[-1]["expire_rest_days"]
-            days = expire_rest_days  # TqSdk 自动提供剩余自然日
+            # symbol_info = api.query_symbol_info(symbol)
+            # underlying_symbol = symbol_info.iloc[-1]["underlying_symbol"]
+            # symbol_info = api.query_symbol_info(underlying_symbol)
+            # expire_rest_days = symbol_info.iloc[-1]["expire_rest_days"]
+            days = fut_quote.underlying_quote.expire_rest_days  # TqSdk 自动提供剩余自然日
 
             ann_basis = calc_annualized_basis(fut_price, spot_price, days)
 

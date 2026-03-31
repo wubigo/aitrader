@@ -67,8 +67,7 @@ def monitor_ic_basis(interval=1800):  # 默认 30 分钟（1800秒）
             underlying_symbol = symbol_info.iloc[-1]["underlying_symbol"]
             symbol_info = api.query_symbol_info(underlying_symbol)
             expire_rest_days = symbol_info.iloc[-1]["expire_rest_days"]
-
-            days = expire_rest_days  # TqSdk 自动提供剩余自然日（比手动算更准）
+            days = expire_rest_days  # TqSdk 自动提供剩余自然日
 
             ann_basis = calc_annualized_basis(fut_price, spot_price, days)
 
@@ -105,7 +104,7 @@ def monitor_ic_basis(interval=1800):  # 默认 30 分钟（1800秒）
                 '状态': status,
                 'timestamp': now
             }])
-            backup_dataframe(df, f"IC主连-年化贴水-{now.strftime('%Y%m%d_%H%M')}.csv")
+            backup_dataframe(df, f"IC主连-年化贴水-TQSDK-{now.strftime('%Y%m%d_%H%M')}.csv")
 
     except KeyboardInterrupt:
         print("\n\n⛔ 监控已停止")

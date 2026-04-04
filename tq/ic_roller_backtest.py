@@ -119,7 +119,7 @@ try:
                                       f"指数收盘: {idx_close:.2f} | "
                                       f"贴水: {discount_bp:.2f} bp（≥50bp）")
 
-                                if not has_opened_in_current_main and expire_rest_days > 7:
+                                if not has_opened_in_current_main and expire_rest_days > 7 and test_time.date() > start_dt:
                                     target_pos_task.set_target_volume(1)
                                     has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
                                     print("✅ 已下达【买入 1 手】指令，等待成交...")

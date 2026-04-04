@@ -18,7 +18,7 @@ index_symbol = "SSE.000905"  # 中证500指数（官方符号）
 duration = 60*60*24  # K 线周期（秒），60=1分钟线
 data_length = 100  # 窗口大小
 
-start_dt = date(2026, 1, 1)
+start_dt = date(2022, 1, 1)
 end_dt = date(2026, 3, 31)
 # 开始时间转为纳秒时间戳
 start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
@@ -124,6 +124,7 @@ try:
                             quote = api.get_quote(futures_symbol)
                             expire_rest_days = quote.underlying_quote.expire_rest_days
                             position = api.get_position(current_underlying)
+                            logging.info(f"当前日期: {test_time},合约：{current_underlying}， 剩余天数: {expire_rest_days}, 持仓: {position.pos_long}")
                             # === 核心判断：期货贴水 ≥ 50bp 就报警 ===
                             if discount_bp >= 50:
                                 alert_time = test_time
@@ -140,13 +141,13 @@ try:
                                     has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
                                     print("✅ 已下达【买入 1 手】指令，等待成交...")
 
-                                if has_opened_in_current_main and expire_rest_days <= 6 and position.pos_long > 0:
-                                    print(
-                                        f"⏰【临期平仓】合约: {current_underlying} 距离到期仅剩 {expire_rest_days} 天，触发强制平仓。多头浮动盈亏: {position.float_profit_long}")
-                                    target_pos_task.set_target_volume(0)
-                                    # 注意：平仓后可以设置标记，防止同一合约在最后几天又因为贴水被买回来
-                                    has_opened_in_current_main = True
-                                    continue  # 跳过本次循环，不再进入下方的买入判断
+                            if expire_rest_days <= 6 and position.pos_long > 0:
+                                print(
+                                    f"⏰【临期平仓】合约: {current_underlying} 距离到期仅剩 {expire_rest_days} 天，触发强制平仓。多头浮动盈亏: {position.float_profit_long}")
+                                target_pos_task.set_target_volume(0)
+                                # 注意：平仓后可以设置标记，防止同一合约在最后几天又因为贴水被买回来
+                                has_opened_in_current_main = True
+                                continue  # 跳过本次循环，不再进入下方的买入判断
 
 
                             print(f"{test_time }多头持仓一手数量: {position.pos_long}，多头浮动盈亏: {position.float_profit_long}")

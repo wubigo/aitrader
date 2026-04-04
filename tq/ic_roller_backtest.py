@@ -1,17 +1,27 @@
+import logging
 import os
 from datetime import date, datetime
 import pandas as pd
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
 from utils.backtest_logger import backup_dataframe
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
 # ================== 配置区域 ==================
 futures_symbol = "KQ.m@CFFEX.IC"  # IC 主连合约
 index_symbol = "SSE.000905"  # 中证500指数（官方符号）
 duration = 60*60*24  # K 线周期（秒），60=1分钟线
-data_length = 20  # 窗口大小
+data_length = 100  # 窗口大小
 
 start_dt = date(2026, 1, 1)
 end_dt = date(2026, 3, 31)
+# 开始时间转为纳秒时间戳
+start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
 # ============================================
 
 # 从环境变量获取账号密码
@@ -35,8 +45,9 @@ expire = quote.underlying_quote.expire_datetime
 
 
 # 订阅期货主连 K 线 + 指数 K 线（同周期，确保时间对齐）
-futures_klines = api.get_kline_serial(futures_symbol, duration, data_length=data_length)
-index_klines = api.get_kline_serial(index_symbol, duration, data_length=data_length)
+# 增加 fill_min_period=0 参数，确保不向前追溯历史数据
+futures_klines = api.get_kline_serial(futures_symbol, duration, data_length=data_length, fill_min_period=0)
+index_klines = api.get_kline_serial(index_symbol, duration, data_length=data_length, fill_min_period=0)
 quote = api.get_quote(futures_symbol)  # 用于监控主力切换
 
 full_klines = []  # 用于最终保存所有 K 线
@@ -90,9 +101,11 @@ try:
 
         # ================== 累积 K 线 + 贴水判断 ==================
         if api.is_changing(futures_klines):
-            new_bars = futures_klines[futures_klines["datetime"] > last_dt]
+
+            new_bars = futures_klines[(futures_klines["datetime"] > last_dt) & (futures_klines["datetime"] >= start_nano)]
 
             if not new_bars.empty:
+                logging.info(f"new_bars rows:{len(new_bars)}")
                 for idx, row in new_bars.iterrows():
                     fut_dt = row["datetime"]
                     fut_close = row["close"]

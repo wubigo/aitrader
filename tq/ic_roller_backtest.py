@@ -33,6 +33,7 @@ quote = api.get_quote(futures_symbol)
 current_underlying = quote.underlying_symbol
 expire = quote.underlying_quote.expire_datetime
 
+
 # 订阅期货主连 K 线 + 指数 K 线（同周期，确保时间对齐）
 futures_klines = api.get_kline_serial(futures_symbol, duration, data_length=data_length)
 index_klines = api.get_kline_serial(index_symbol, duration, data_length=data_length)
@@ -107,16 +108,18 @@ try:
                             discount_bp = round(discount * 10000, 2)   # 关键：保留2位小数
                             test_time = pd.to_datetime(fut_dt, unit='ns')
 
+                            quote = api.get_quote(futures_symbol)
+                            expire_rest_days = quote.underlying_quote.expire_rest_days
+
                             # === 核心判断：期货贴水 ≥ 50bp 就报警 ===
                             if discount_bp >= 50:
                                 alert_time = test_time
-                                print(f"🚨【贴水报警】时间: {alert_time} | "
+                                print(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
                                       f"期货收盘: {fut_close:.2f} | "
                                       f"指数收盘: {idx_close:.2f} | "
                                       f"贴水: {discount_bp:.2f} bp（≥50bp）")
-                                print(f"合约: {current_underlying}")
 
-                                if not has_opened_in_current_main:
+                                if not has_opened_in_current_main and expire_rest_days > 7:
                                     target_pos_task.set_target_volume(1)
                                     has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
                                     print("✅ 已下达【买入 1 手】指令，等待成交...")

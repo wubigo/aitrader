@@ -67,11 +67,7 @@ try:
                 trade_time = datetime.fromtimestamp(trade.trade_date_time / 1e9)
 
                 print(f"--- 交易成功通知 ---")
-                print(f"成交时间: {trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}")
-                print(f"成交价格: {trade.price}")
-                print(f"成交数量: {trade.volume}")
-                print(f"买卖方向: {trade.direction}")
-
+                print(f"时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 买卖方向:{trade.direction}")
                 processed_trade_ids.add(trade_id)
                 # 3. 检查是否已经达到目标持仓（可选）
                 pos = api.get_position(current_underlying)

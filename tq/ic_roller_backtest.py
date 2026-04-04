@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, datetime
 import pandas as pd
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask
 from utils.backtest_logger import backup_dataframe
@@ -39,11 +39,41 @@ last_dt = 0  # 上次已保存的期货 datetime
 
 target_pos_task = TargetPosTask(api, current_underlying)
 
+# 已处理的成交 ID 集合，避免重复打印
+processed_trade_ids = set()
+
 print(f"开始回测：{futures_symbol}（中证500期货主连） vs {index_symbol}（中证500指数）")
 
 try:
     while True:
         api.wait_update()
+
+        # 2. 获取账户所有成交记录
+        trades = api.get_trade()
+        for trade_id, trade in trades.items():
+            # 过滤条件：该合约的成交 且 是新发现的成交记录
+            # TqSdk 的 Trade 对象使用 instrument_id (合约代码) 和 exchange_id (交易所代码)
+            # 拼接方式通常为 "EXCHANGE.INSTRUMENT"
+            trade_symbol = f"{trade.exchange_id}.{trade.instrument_id}"
+            if trade_symbol == current_underlying and trade_id not in processed_trade_ids:
+                # trade_date_time 是纳秒时间戳
+                trade_time = datetime.fromtimestamp(trade.trade_date_time / 1e9)
+
+                print(f"--- 交易成功通知 ---")
+                print(f"成交时间: {trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}")
+                print(f"成交价格: {trade.price}")
+                print(f"成交数量: {trade.volume}")
+                print(f"买卖方向: {trade.direction}")
+
+                processed_trade_ids.add(trade_id)
+                # 3. 检查是否已经达到目标持仓（可选）
+                pos = api.get_position(current_underlying)
+                if pos.pos_long == 1:
+                    print("目标持仓已达成，查询结束。")
+                    break
+
+
+
 
         # ================== 监控主力合约切换 ==================
         if api.is_changing(quote, "underlying_symbol"):

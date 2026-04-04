@@ -1,7 +1,7 @@
 import os
 from datetime import date, datetime
 import pandas as pd
-from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask
+from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
 from utils.backtest_logger import backup_dataframe
 
 # ================== 配置区域 ==================
@@ -18,9 +18,13 @@ end_dt = date(2026, 3, 31)
 token = os.getenv("TQ_ID")
 pa = os.getenv("TQ_PASS")
 
+# 定义模拟账户：初始资金 100 万
+sim_account = TqSim(init_balance=1000000)
+
 # 1. 创建回测 API
 api = TqApi(
     backtest=TqBacktest(start_dt=start_dt, end_dt=end_dt),
+    account=sim_account,
     auth=TqAuth(token, pa)
 )
 
@@ -41,6 +45,9 @@ target_pos_task = TargetPosTask(api, current_underlying)
 
 # 已处理的成交 ID 集合，避免重复打印
 processed_trade_ids = set()
+
+# 新增：记录当前主力合约是否已开仓的标记
+has_opened_in_current_main = False
 
 print(f"开始回测：{futures_symbol}（中证500期货主连） vs {index_symbol}（中证500指数）")
 
@@ -81,6 +88,8 @@ try:
             print(f"【主力切换】{current_underlying or '开始'} → {new_underlying}  | 时间: {quote.datetime}")
             current_underlying = new_underlying
             target_pos_task = TargetPosTask(api, current_underlying)
+            # 关键：主力切换后，重置开仓标记，允许新合约贴水开仓
+            has_opened_in_current_main = False
 
         # ================== 累积 K 线 + 贴水判断 ==================
         if api.is_changing(futures_klines):
@@ -110,15 +119,16 @@ try:
                                       f"贴水: {discount_bp:.2f} bp（≥50bp）")
                                 position = api.get_position(current_underlying)
                                 print(f"合约: {current_underlying}")
-                                pos_long = position.pos_long
-                                if pos_long > 0:
+
+                                if not has_opened_in_current_main:
+                                    target_pos_task.set_target_volume(1)
+                                    has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
+                                    print("✅ 已下达【买入 1 手】指令，等待成交...")
+                                else:
                                     print(f"多头持仓一手数量: {position.pos_long}")
                                     print(f"空头持仓一手数量: {position.pos_short}")
                                     print(f"多头浮动盈亏: {position.float_profit_long}")
                                     print(f"空头浮动盈亏: {position.float_profit_short}")
-                                else:
-                                    target_pos_task.set_target_volume(1)
-                                    print("✅ 已下达【买入 1 手】指令，等待成交...")
 
                         # 可选：把指数价和贴水也存进 full_klines（方便后续分析）
                         row = row.copy()

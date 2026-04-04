@@ -109,26 +109,27 @@ try:
                         if idx_close > 0:  # 防止除零
                             discount = (idx_close - fut_close) / idx_close
                             discount_bp = round(discount * 10000, 2)   # 关键：保留2位小数
+                            test_time = pd.to_datetime(fut_dt, unit='ns')
 
                             # === 核心判断：期货贴水 ≥ 50bp 就报警 ===
                             if discount_bp >= 50:
-                                alert_time = pd.to_datetime(fut_dt, unit='ns')
+                                alert_time = test_time
                                 print(f"🚨【贴水报警】时间: {alert_time} | "
                                       f"期货收盘: {fut_close:.2f} | "
                                       f"指数收盘: {idx_close:.2f} | "
                                       f"贴水: {discount_bp:.2f} bp（≥50bp）")
-                                position = api.get_position(current_underlying)
                                 print(f"合约: {current_underlying}")
 
                                 if not has_opened_in_current_main:
                                     target_pos_task.set_target_volume(1)
                                     has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
                                     print("✅ 已下达【买入 1 手】指令，等待成交...")
-                                else:
-                                    print(f"多头持仓一手数量: {position.pos_long}")
-                                    print(f"空头持仓一手数量: {position.pos_short}")
-                                    print(f"多头浮动盈亏: {position.float_profit_long}")
-                                    print(f"空头浮动盈亏: {position.float_profit_short}")
+
+                            position = api.get_position(current_underlying)
+                            print(f"{test_time }多头持仓一手数量: {position.pos_long}，多头浮动盈亏: {position.float_profit_long}")
+                            # print(f"空头持仓一手数量: {position.pos_short}，空头浮动盈亏: {position.float_profit_short}")
+
+
 
                         # 可选：把指数价和贴水也存进 full_klines（方便后续分析）
                         row = row.copy()

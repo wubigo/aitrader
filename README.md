@@ -221,7 +221,9 @@ Stock index futures rolling discount arbitrage is a market-neutral strategy that
 exploits mispricing between the current spot index and futures contracts, specifically
 when the futures contract is trading at a significant discount to the fair 
 value (backwardation), and profit is locked in by "rolling" the position across 
-expiration dates rather than closing it
+expiration dates rather than closing it.
+
+Open Interest(未平仓合约)
 
 
 A 股股指期货（IF/IC/IH/IM）的理论价格 ≈ 现货指数 + 持仓资金利息 − 成分股股息，实际价格经常会低于现货（贴水）。
@@ -234,3 +236,7 @@ A 股股指期货（IF/IC/IH/IM）的理论价格 ≈ 现货指数 + 持仓资�
 年化 ≈ 贴水点数 ÷ 指数点位 ÷ 剩余天数 × 365。
 
 经验上，投资者会在「年化贴水明显高于无风险利率」时才愿意系统性滚动
+
+## TQSDK
+
+Exception: 与 wss://backtest.shinnytech.com/t/nfmd/front/mobile 的连接失败，每日 19:00-19:30 为日常运维时间

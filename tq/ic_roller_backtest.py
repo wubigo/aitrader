@@ -229,7 +229,9 @@ try:
                         row_data["index_close"] = idx_close
                         row_data["discount_bp"] = discount_bp
                         row_data["ann_basis"] = ann_basis
-                        row_data["balance"] = sim_account.balance
+                        # 获取账户资金情况，TqSdk 中通过 api.get_account() 获取
+                        account_info = api.get_account()
+                        row_data["balance"] = account_info.balance
                         full_klines_data.append(row_data)
                     else:
                         # 极少数情况下时间未对齐，直接用期货 bar
@@ -261,7 +263,8 @@ except BacktestFinished:
         if "balance" in full_df.columns:
             # 1. 年化收益率 (CAGR)
             start_balance = INITIAL_ACCOUNT_BALANCE
-            end_balance = sim_account.balance
+            account_info = api.get_account()
+            end_balance = account_info.balance
             days = (end_dt - start_dt).days
             if days > 0:
                 cagr = (end_balance / start_balance) ** (365.0 / days) - 1

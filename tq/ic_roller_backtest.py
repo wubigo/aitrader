@@ -152,12 +152,11 @@ try:
                                       f"指数收盘: {idx_close:.2f} | "
                                       f"年化贴水: {ann_basis:.2f} ")
 
-
                                 target_pos_task.set_target_volume(1)
                                 has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
                                 print("✅ 已下达【买入 1 手】指令，等待成交...")
 
-                            if expire_rest_days <= 6 and position.pos_long > 0:
+                            elif expire_rest_days <= 6 and position.pos_long > 0:
                                 print(
                                     f"⏰【临期平仓】合约: {current_underlying} 距离到期仅剩 {expire_rest_days} 天，触发强制平仓。多头浮动盈亏: {position.float_profit_long}")
                                 target_pos_task.set_target_volume(0)
@@ -165,12 +164,11 @@ try:
                                 has_opened_in_current_main = True
                                 continue  # 跳过本次循环，不再进入下方的买入判断
 
-
-                            print(f"{test_time }-持仓: {position.pos_long}，浮动盈亏: {position.float_profit_long}, 合约：{current_underlying}， 剩余天数: {expire_rest_days}")
-                            # logging.info(
-                            #     f"当前日期: {test_time},合约：{current_underlying}， 剩余天数: {expire_rest_days}, 持仓: {position.pos_long}")
-                            # print(f"空头持仓一手数量: {position.pos_short}，空头浮动盈亏: {position.float_profit_short}")
-
+                            else:
+                                print(f"{test_time }-持仓: {position.pos_long}，浮动盈亏: {position.float_profit_long}, 合约：{current_underlying}， 剩余天数: {expire_rest_days}")
+                                # logging.info(
+                                #     f"当前日期: {test_time},合约：{current_underlying}， 剩余天数: {expire_rest_days}, 持仓: {position.pos_long}")
+                                # print(f"空头持仓一手数量: {position.pos_short}，空头浮动盈亏: {position.float_profit_short}")
 
 
                         # 可选：把指数价和贴水也存进 full_klines（方便后续分析）

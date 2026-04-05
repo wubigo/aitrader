@@ -12,13 +12,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def calc_annualized_basis(fut_price, spot_price, days):
+    """计算年化贴水率"""
+    if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0:
+        return None
+    if fut_price is None or spot_price is None:
+        return None
+
+    basis_ratio = (spot_price - fut_price) / spot_price
+    annualized = basis_ratio * 365 / days * 100
+    return round(annualized, 3)
+
+
+
 # ================== 配置区域 ==================
 futures_symbol = "KQ.m@CFFEX.IC"  # IC 主连合约
 index_symbol = "SSE.000905"  # 中证500指数（官方符号）
 duration = 60*60*24  # K 线周期（秒），60=1分钟线
 data_length = 100  # 窗口大小
 
-start_dt = date(2022, 1, 1)
+start_dt = date(2026, 1, 1)
 end_dt = date(2026, 3, 31)
 # 开始时间转为纳秒时间戳
 start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
@@ -79,7 +92,7 @@ try:
                 trade_time = datetime.fromtimestamp(trade.trade_date_time / 1e9)
 
                 print(f"--- 交易成功通知 ---")
-                print(f"时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 买卖方向:{trade.direction}")
+                print(f"Trade时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 买卖方向:{trade.direction}")
                 processed_trade_ids.add(trade_id)
                 # 3. 检查是否已经达到目标持仓（可选）
                 pos = api.get_position(current_underlying)
@@ -124,22 +137,25 @@ try:
                             quote = api.get_quote(futures_symbol)
                             expire_rest_days = quote.underlying_quote.expire_rest_days
                             position = api.get_position(current_underlying)
-                            logging.info(f"当前日期: {test_time},合约：{current_underlying}， 剩余天数: {expire_rest_days}, 持仓: {position.pos_long}")
-                            # === 核心判断：期货贴水 ≥ 50bp 就报警 ===
-                            if discount_bp >= 50:
+                            ann_basis = calc_annualized_basis(fut_close, idx_close, expire_rest_days)
+
+                            # === 核心判断：期货贴水报警 ===
+                            if (ann_basis is not None and
+                                    ann_basis > 8.0 and
+                                    expire_rest_days > 7 and
+                                    position.pos_long == 0 and
+                                    test_time.date() > start_dt and
+                                    not has_opened_in_current_main):
                                 alert_time = test_time
                                 print(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
                                       f"期货收盘: {fut_close:.2f} | "
                                       f"指数收盘: {idx_close:.2f} | "
-                                      f"贴水: {discount_bp:.2f} bp（≥50bp）")
+                                      f"年化贴水: {ann_basis:.2f} ")
 
-                                if not has_opened_in_current_main and\
-                                        expire_rest_days > 7 and\
-                                        test_time.date() > start_dt and\
-                                        position.pos_long < 1:
-                                    target_pos_task.set_target_volume(1)
-                                    has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
-                                    print("✅ 已下达【买入 1 手】指令，等待成交...")
+
+                                target_pos_task.set_target_volume(1)
+                                has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
+                                print("✅ 已下达【买入 1 手】指令，等待成交...")
 
                             if expire_rest_days <= 6 and position.pos_long > 0:
                                 print(
@@ -150,7 +166,9 @@ try:
                                 continue  # 跳过本次循环，不再进入下方的买入判断
 
 
-                            print(f"{test_time }多头持仓一手数量: {position.pos_long}，多头浮动盈亏: {position.float_profit_long}")
+                            print(f"{test_time }-持仓: {position.pos_long}，浮动盈亏: {position.float_profit_long}, 合约：{current_underlying}， 剩余天数: {expire_rest_days}")
+                            # logging.info(
+                            #     f"当前日期: {test_time},合约：{current_underlying}， 剩余天数: {expire_rest_days}, 持仓: {position.pos_long}")
                             # print(f"空头持仓一手数量: {position.pos_short}，空头浮动盈亏: {position.float_profit_short}")
 
 
@@ -191,3 +209,6 @@ except BacktestFinished:
 
 finally:
     api.close()
+
+
+

@@ -37,6 +37,9 @@ INITIAL_ACCOUNT_BALANCE = 1000000
 ANNUALIZED_BASIS_THRESHOLD = 8.0  # 年化贴水报警阈值
 MIN_DAYS_TO_EXPIRATION_OPEN = 7   # 距离到期天数 > 此值才允许开仓
 MAX_DAYS_TO_EXPIRATION_CLOSE = 6  # 距离到期天数 <= 此值触发平仓
+PROFIT_TAKING_BASIS_PCT = 0.5   # 止盈比例，例如 0.5 表示当贴水修复了50%时止盈
+INDEX_SMA_PERIOD = 20           # 指数SMA周期，用于趋势过滤
+DEFAULT_TRADE_VOLUME = 1        # 默认交易手数
 
 duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
 data_length = KLINE_DATA_LENGTH  # 窗口大小
@@ -83,6 +86,7 @@ processed_trade_ids = set()
 
 # 新增：记录当前主力合约是否已开仓的标记
 has_opened_in_current_main = False
+entry_ann_basis = None # Track annualized basis at entry for profit-taking
 
 logger.info(f"开始回测：{futures_symbol}（中证500期货主连） vs {index_symbol}（中证500指数）")
 
@@ -148,22 +152,39 @@ try:
                             position = api.get_position(current_underlying)
                             ann_basis = calc_annualized_basis(fut_close, idx_close, expire_rest_days)
 
+                            # --- 趋势过滤 ---
+                            index_sma = index_klines["close"].rolling(window=INDEX_SMA_PERIOD).mean().iloc[-1]
+                            is_uptrend = idx_close > index_sma
+
                             # === 核心判断：期货贴水报警 ===
                             if (ann_basis is not None and
                                     ann_basis > ANNUALIZED_BASIS_THRESHOLD and
                                     expire_rest_days > MIN_DAYS_TO_EXPIRATION_OPEN and
                                     position.pos_long == 0 and
                                     test_time.date() > start_dt and
+                                    is_uptrend and # 仅在上涨趋势或非强下跌趋势中开仓
                                     not has_opened_in_current_main):
                                 alert_time = test_time
                                 logger.info(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
                                       f"期货收盘: {fut_close:.2f} | "
                                       f"指数收盘: {idx_close:.2f} | "
-                                      f"年化贴水: {ann_basis:.2f} ")
+                                      f"年化贴水: {ann_basis:.2f} | "
+                                      f"指数SMA({INDEX_SMA_PERIOD}): {index_sma:.2f}")
 
-                                target_pos_task.set_target_volume(1)
+                                target_pos_task.set_target_volume(DEFAULT_TRADE_VOLUME)
                                 has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
-                                logger.info("✅ 已下达【买入 1 手】指令，等待成交...")
+                                entry_ann_basis = ann_basis        # 记录开仓时的年化贴水
+                                logger.info(f"✅ 已下达【买入 {DEFAULT_TRADE_VOLUME} 手】指令，等待成交...")
+
+                            elif position.pos_long > 0 and entry_ann_basis is not None:
+                                # 计算贴水修复比例
+                                basis_repair_pct = (entry_ann_basis - ann_basis) / entry_ann_basis
+                                if basis_repair_pct >= PROFIT_TAKING_BASIS_PCT:
+                                    logger.info(f"💰【止盈平仓】合约: {current_underlying} 达到止盈条件 (修复率: {basis_repair_pct:.2%})，触发平仓。")
+                                    target_pos_task.set_target_volume(0)
+                                    has_opened_in_current_main = True # 平仓后本合约不再操作
+                                    entry_ann_basis = None
+                                    continue
 
                             elif expire_rest_days <= MAX_DAYS_TO_EXPIRATION_CLOSE and position.pos_long > 0:
                                 logger.info(

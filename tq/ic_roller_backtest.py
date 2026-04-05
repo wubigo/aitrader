@@ -5,18 +5,20 @@ import pandas as pd
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
 from utils.backtest_logger import backup_dataframe
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+from utils.logging_config import setup_logging
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
 def calc_annualized_basis(fut_price, spot_price, days):
     """计算年化贴水率"""
+    # 确保价格和天数有效，防止NaN值、None或负天数
     if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0:
         return None
-    if fut_price is None or spot_price is None:
+    # 防止除以零
+    if spot_price == 0:
+        logger.warning("Spot price is zero, cannot calculate annualized basis.")
         return None
 
     basis_ratio = (spot_price - fut_price) / spot_price
@@ -28,8 +30,16 @@ def calc_annualized_basis(fut_price, spot_price, days):
 # ================== 配置区域 ==================
 futures_symbol = "KQ.m@CFFEX.IC"  # IC 主连合约
 index_symbol = "SSE.000905"  # 中证500指数（官方符号）
-duration = 60*60*24  # K 线周期（秒），60=1分钟线
-data_length = 100  # 窗口大小
+# --- 常量定义 ---
+ONE_DAY_SECONDS = 60 * 60 * 24
+KLINE_DATA_LENGTH = 100
+INITIAL_ACCOUNT_BALANCE = 1000000
+ANNUALIZED_BASIS_THRESHOLD = 8.0  # 年化贴水报警阈值
+MIN_DAYS_TO_EXPIRATION_OPEN = 7   # 距离到期天数 > 此值才允许开仓
+MAX_DAYS_TO_EXPIRATION_CLOSE = 6  # 距离到期天数 <= 此值触发平仓
+
+duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
+data_length = KLINE_DATA_LENGTH  # 窗口大小
 
 start_dt = date(2026, 1, 1)
 end_dt = date(2026, 3, 31)
@@ -41,8 +51,8 @@ start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
 token = os.getenv("TQ_ID")
 pa = os.getenv("TQ_PASS")
 
-# 定义模拟账户：初始资金 100 万
-sim_account = TqSim(init_balance=1000000)
+# 定义模拟账户：初始资金 INITIAL_ACCOUNT_BALANCE
+sim_account = TqSim(init_balance=INITIAL_ACCOUNT_BALANCE)
 
 # 1. 创建回测 API
 api = TqApi(
@@ -63,7 +73,7 @@ futures_klines = api.get_kline_serial(futures_symbol, duration, data_length=data
 index_klines = api.get_kline_serial(index_symbol, duration, data_length=data_length, fill_min_period=0)
 quote = api.get_quote(futures_symbol)  # 用于监控主力切换
 
-full_klines = []  # 用于最终保存所有 K 线
+full_klines_data = []  # 用于最终保存所有 K 线的数据字典
 last_dt = 0  # 上次已保存的期货 datetime
 
 target_pos_task = TargetPosTask(api, current_underlying)
@@ -74,7 +84,7 @@ processed_trade_ids = set()
 # 新增：记录当前主力合约是否已开仓的标记
 has_opened_in_current_main = False
 
-print(f"开始回测：{futures_symbol}（中证500期货主连） vs {index_symbol}（中证500指数）")
+logger.info(f"开始回测：{futures_symbol}（中证500期货主连） vs {index_symbol}（中证500指数）")
 
 try:
     while True:
@@ -91,13 +101,13 @@ try:
                 # trade_date_time 是纳秒时间戳
                 trade_time = datetime.fromtimestamp(trade.trade_date_time / 1e9)
 
-                print(f"--- 交易成功通知 ---")
-                print(f"Trade时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 买卖方向:{trade.direction}")
+                logger.info(f"--- 交易成功通知 ---")
+                logger.info(f"Trade时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 买卖方向:{trade.direction}")
                 processed_trade_ids.add(trade_id)
                 # 3. 检查是否已经达到目标持仓（可选）
                 pos = api.get_position(current_underlying)
-                if pos.pos_long == 1:
-                    print("目标持仓已达成，查询结束。")
+                if pos.pos_long == 1: # Assuming target is 1 long position
+                    logger.info("目标持仓已达成，查询结束。")
                     break
 
 
@@ -106,7 +116,7 @@ try:
         # ================== 监控主力合约切换 ==================
         if api.is_changing(quote, "underlying_symbol"):
             new_underlying = quote.underlying_symbol
-            print(f"【主力切换】{current_underlying or '开始'} → {new_underlying}  | 时间: {quote.datetime}")
+            logger.info(f"【主力切换】{current_underlying or '开始'} → {new_underlying}  | 时间: {quote.datetime}")
             current_underlying = new_underlying
             target_pos_task = TargetPosTask(api, current_underlying)
             # 关键：主力切换后，重置开仓标记，允许新合约贴水开仓
@@ -118,7 +128,6 @@ try:
             new_bars = futures_klines[(futures_klines["datetime"] > last_dt) & (futures_klines["datetime"] >= start_nano)]
 
             if not new_bars.empty:
-                # logging.info(f"new_bars rows:{len(new_bars)}")
                 for idx, row in new_bars.iterrows():
                     fut_dt = row["datetime"]
                     fut_close = row["close"]
@@ -141,23 +150,23 @@ try:
 
                             # === 核心判断：期货贴水报警 ===
                             if (ann_basis is not None and
-                                    ann_basis > 8.0 and
-                                    expire_rest_days > 7 and
+                                    ann_basis > ANNUALIZED_BASIS_THRESHOLD and
+                                    expire_rest_days > MIN_DAYS_TO_EXPIRATION_OPEN and
                                     position.pos_long == 0 and
                                     test_time.date() > start_dt and
                                     not has_opened_in_current_main):
                                 alert_time = test_time
-                                print(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
+                                logger.info(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
                                       f"期货收盘: {fut_close:.2f} | "
                                       f"指数收盘: {idx_close:.2f} | "
                                       f"年化贴水: {ann_basis:.2f} ")
 
                                 target_pos_task.set_target_volume(1)
                                 has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
-                                print("✅ 已下达【买入 1 手】指令，等待成交...")
+                                logger.info("✅ 已下达【买入 1 手】指令，等待成交...")
 
-                            elif expire_rest_days <= 6 and position.pos_long > 0:
-                                print(
+                            elif expire_rest_days <= MAX_DAYS_TO_EXPIRATION_CLOSE and position.pos_long > 0:
+                                logger.info(
                                     f"⏰【临期平仓】合约: {current_underlying} 距离到期仅剩 {expire_rest_days} 天，触发强制平仓。多头浮动盈亏: {position.float_profit_long}")
                                 target_pos_task.set_target_volume(0)
                                 # 注意：平仓后可以设置标记，防止同一合约在最后几天又因为贴水被买回来
@@ -165,28 +174,26 @@ try:
                                 continue  # 跳过本次循环，不再进入下方的买入判断
 
                             else:
-                                print(f"{test_time }-持仓: {position.pos_long}，浮动盈亏: {position.float_profit_long}, 合约：{current_underlying}， 剩余天数: {expire_rest_days}")
-                                # logging.info(
-                                #     f"当前日期: {test_time},合约：{current_underlying}， 剩余天数: {expire_rest_days}, 持仓: {position.pos_long}")
-                                # print(f"空头持仓一手数量: {position.pos_short}，空头浮动盈亏: {position.float_profit_short}")
+                                logger.info(f"{test_time }-持仓: {position.pos_long}，浮动盈亏: {position.float_profit_long}, 合约：{current_underlying}， 剩余天数: {expire_rest_days}")
 
 
                         # 可选：把指数价和贴水也存进 full_klines（方便后续分析）
-                        row = row.copy()
-                        row["index_close"] = idx_close if not idx_match.empty else None
-                        row["discount_bp"] = discount_bp if not idx_match.empty else None
-                        full_klines.append(row.to_frame().T)  # 每条独立 append
+                        # 收集数据作为字典
+                        row_data = row.to_dict()
+                        row_data["index_close"] = idx_close
+                        row_data["discount_bp"] = discount_bp
+                        full_klines_data.append(row_data)
                     else:
                         # 极少数情况下时间未对齐，直接用期货 bar
-                        full_klines.append(row.to_frame().T)
+                        full_klines_data.append(row.to_dict())
 
                 last_dt = futures_klines.iloc[-1]["datetime"]
 
 except BacktestFinished:
-    print("\n回测结束，开始保存完整数据...")
+    logger.info("\n回测结束，开始保存完整数据...")
 
-    if full_klines:
-        full_df = pd.concat(full_klines, ignore_index=True)
+    if full_klines_data:
+        full_df = pd.DataFrame(full_klines_data)
         full_df["datetime"] = pd.to_datetime(full_df["datetime"], unit="ns")
 
         # 保存（推荐 parquet）
@@ -194,16 +201,16 @@ except BacktestFinished:
 
         backup_dataframe(full_df, csv_file)
 
-        print(f"✅ 保存完成！共 {len(full_df)} 根 K 线")
-        print(f"   CSV: {csv_file}")
+        logger.info(f"✅ 保存完成！共 {len(full_df)} 根 K 线")
+        logger.info(f"   CSV: {csv_file}")
 
         # 额外统计贴水报警次数（方便查看）
         if "discount_bp" in full_df.columns:
             alert_count = (full_df["discount_bp"] >= 50).sum()
-            print(f"📊 本次回测共触发贴水≥50bp 报警 {alert_count} 次")
+            logger.info(f"📊 本次回测共触发贴水≥50bp 报警 {alert_count} 次")
 
     else:
-        print("未获取到 K 线数据")
+        logger.info("未获取到 K 线数据")
 
 finally:
     api.close()

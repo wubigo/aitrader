@@ -40,6 +40,9 @@ MAX_DAYS_TO_EXPIRATION_CLOSE = 6  # 距离到期天数 <= 此值触发平仓
 PROFIT_TAKING_BASIS_PCT = 0.5   # 止盈比例，例如 0.5 表示当贴水修复了50%时止盈
 INDEX_SMA_PERIOD = 20           # 指数SMA周期，用于趋势过滤
 DEFAULT_TRADE_VOLUME = 1        # 默认交易手数
+ADAPTIVE_THRESHOLD_WINDOW = 60 # 动态阈值窗口（K线数量）
+VOLATILITY_WINDOW = 20          # 波动率窗口
+TARGET_VOLATILITY = 0.15        # 目标年化波动率，用于调整仓位
 
 duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
 data_length = KLINE_DATA_LENGTH  # 窗口大小
@@ -55,7 +58,7 @@ token = os.getenv("TQ_ID")
 pa = os.getenv("TQ_PASS")
 
 # 定义模拟账户：初始资金 INITIAL_ACCOUNT_BALANCE
-sim_account = TqSim(init_balance=INITIAL_ACCOUNT_BALANCE)
+sim_account = TqSim(init_balance=INITIAL_ACCOUNT_BALANCE, account_id='bigo')
 
 # 1. 创建回测 API
 api = TqApi(
@@ -156,9 +159,31 @@ try:
                             index_sma = index_klines["close"].rolling(window=INDEX_SMA_PERIOD).mean().iloc[-1]
                             is_uptrend = idx_close > index_sma
 
+                            # --- 动态阈值计算 ---
+                            # 维护最近的年化贴水历史
+                            basis_history = [row["ann_basis"] for row in full_klines_data[-ADAPTIVE_THRESHOLD_WINDOW:] if "ann_basis" in row and row["ann_basis"] is not None]
+                            if len(basis_history) >= ADAPTIVE_THRESHOLD_WINDOW:
+                                dynamic_threshold = pd.Series(basis_history).quantile(0.75) # 使用75%分位数作为动态门槛
+                            else:
+                                dynamic_threshold = ANNUALIZED_BASIS_THRESHOLD
+
+                            # --- 波动率调整仓位 (简单的风险平价思路) ---
+                            # 计算指数最近的年化波动率
+                            if len(full_klines_data) >= VOLATILITY_WINDOW:
+                                idx_closes = [row["index_close"] for row in full_klines_data[-VOLATILITY_WINDOW:] if row["index_close"] is not None]
+                                if len(idx_closes) >= VOLATILITY_WINDOW:
+                                    returns = pd.Series(idx_closes).pct_change().dropna()
+                                    ann_vol = returns.std() * (242 ** 0.5) # 简单年化，假设242个交易日
+                                    # 根据波动率调整仓位：目标波动率 / 当前波动率
+                                    vol_adj_volume = max(1, int(DEFAULT_TRADE_VOLUME * (TARGET_VOLATILITY / max(0.01, ann_vol))))
+                                else:
+                                    vol_adj_volume = DEFAULT_TRADE_VOLUME
+                            else:
+                                vol_adj_volume = DEFAULT_TRADE_VOLUME
+
                             # === 核心判断：期货贴水报警 ===
                             if (ann_basis is not None and
-                                    ann_basis > ANNUALIZED_BASIS_THRESHOLD and
+                                    ann_basis > dynamic_threshold and # 使用动态阈值
                                     expire_rest_days > MIN_DAYS_TO_EXPIRATION_OPEN and
                                     position.pos_long == 0 and
                                     test_time.date() > start_dt and
@@ -168,13 +193,13 @@ try:
                                 logger.info(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
                                       f"期货收盘: {fut_close:.2f} | "
                                       f"指数收盘: {idx_close:.2f} | "
-                                      f"年化贴水: {ann_basis:.2f} | "
+                                      f"年化贴水: {ann_basis:.2f} (动态阈值: {dynamic_threshold:.2f}) | "
                                       f"指数SMA({INDEX_SMA_PERIOD}): {index_sma:.2f}")
 
-                                target_pos_task.set_target_volume(DEFAULT_TRADE_VOLUME)
+                                target_pos_task.set_target_volume(vol_adj_volume)
                                 has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
                                 entry_ann_basis = ann_basis        # 记录开仓时的年化贴水
-                                logger.info(f"✅ 已下达【买入 {DEFAULT_TRADE_VOLUME} 手】指令，等待成交...")
+                                logger.info(f"✅ 已下达【买入 {vol_adj_volume} 手】指令，等待成交...")
 
                             elif position.pos_long > 0 and entry_ann_basis is not None:
                                 # 计算贴水修复比例
@@ -203,6 +228,8 @@ try:
                         row_data = row.to_dict()
                         row_data["index_close"] = idx_close
                         row_data["discount_bp"] = discount_bp
+                        row_data["ann_basis"] = ann_basis
+                        row_data["balance"] = sim_account.balance
                         full_klines_data.append(row_data)
                     else:
                         # 极少数情况下时间未对齐，直接用期货 bar
@@ -229,6 +256,36 @@ except BacktestFinished:
         if "discount_bp" in full_df.columns:
             alert_count = (full_df["discount_bp"] >= 50).sum()
             logger.info(f"📊 本次回测共触发贴水≥50bp 报警 {alert_count} 次")
+
+        # --- 策略绩效分析 ---
+        if "balance" in full_df.columns:
+            # 1. 年化收益率 (CAGR)
+            start_balance = INITIAL_ACCOUNT_BALANCE
+            end_balance = sim_account.balance
+            days = (end_dt - start_dt).days
+            if days > 0:
+                cagr = (end_balance / start_balance) ** (365.0 / days) - 1
+            else:
+                cagr = 0
+
+            # 2. 最大回撤 (MDD)
+            full_df["cum_max_balance"] = full_df["balance"].cummax()
+            full_df["drawdown"] = (full_df["balance"] - full_df["cum_max_balance"]) / full_df["cum_max_balance"]
+            max_drawdown = full_df["drawdown"].min()
+
+            # 3. 夏普比率 (Sharpe Ratio)
+            returns = full_df["balance"].pct_change().dropna()
+            if returns.std() > 0:
+                sharpe = (returns.mean() / returns.std()) * (242 ** 0.5) # 假设242个交易日
+            else:
+                sharpe = 0
+
+            logger.info(f"📈 【策略绩效评估】")
+            logger.info(f"   起始资金: {start_balance:,.2f}")
+            logger.info(f"   最终资金: {end_balance:,.2f}")
+            logger.info(f"   年化收益率 (CAGR): {cagr:.2%}")
+            logger.info(f"   最大回撤 (Max Drawdown): {max_drawdown:.2%}")
+            logger.info(f"   夏普比率 (Sharpe Ratio): {sharpe:.2f}")
 
     else:
         logger.info("未获取到 K 线数据")

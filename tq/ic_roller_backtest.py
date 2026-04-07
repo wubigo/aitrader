@@ -181,6 +181,18 @@ try:
                             else:
                                 vol_adj_volume = DEFAULT_TRADE_VOLUME
 
+                            # --- 贴水监控：历史分位 ---
+                            historical_basis = [r["ann_basis"] for r in full_klines_data if r.get("ann_basis") is not None]
+                            if historical_basis:
+                                # 计算当前贴水在历史中的分位 (Percentile Rank)
+                                smaller_count = sum(1 for x in historical_basis if x < ann_basis)
+                                basis_percentile = (smaller_count / len(historical_basis)) * 100
+                            else:
+                                basis_percentile = 50.0  # 初始中位值
+
+                            if basis_percentile >= 90:
+                                logger.info(f"🔍【贴水监控】当前年化贴水 {ann_basis:.2f}% 处于历史极高分位: {basis_percentile:.1f}%")
+
                             # === 核心判断：期货贴水报警 ===
                             if (ann_basis is not None and
                                     ann_basis > dynamic_threshold and # 使用动态阈值
@@ -193,7 +205,8 @@ try:
                                 logger.info(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
                                       f"期货收盘: {fut_close:.2f} | "
                                       f"指数收盘: {idx_close:.2f} | "
-                                      f"年化贴水: {ann_basis:.2f} (动态阈值: {dynamic_threshold:.2f}) | "
+                                      f"年化贴水: {ann_basis:.2f} (分位: {basis_percentile:.1f}%) | "
+                                      f"动态阈值: {dynamic_threshold:.2f} | "
                                       f"指数SMA({INDEX_SMA_PERIOD}): {index_sma:.2f}")
 
                                 target_pos_task.set_target_volume(vol_adj_volume)
@@ -229,6 +242,7 @@ try:
                         row_data["index_close"] = idx_close
                         row_data["discount_bp"] = discount_bp
                         row_data["ann_basis"] = ann_basis
+                        row_data["basis_percentile"] = basis_percentile
                         # 获取账户资金情况，TqSdk 中通过 api.get_account() 获取
                         account_info = api.get_account()
                         row_data["balance"] = account_info.balance

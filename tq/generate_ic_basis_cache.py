@@ -1,0 +1,117 @@
+import os
+import pandas as pd
+from datetime import date, timedelta
+from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished
+import logging
+
+
+from utils.logging_config import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+CACHE_FILE = "ic_annualized_basis_5years_cache.csv"
+
+
+def calc_annualized_basis(fut_price, spot_price, days):
+    """计算年化贴水率"""
+    if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0 or spot_price <= 0:
+        return None
+    basis_ratio = (spot_price - fut_price) / spot_price
+    annualized = basis_ratio * 365 / days * 100
+    return round(annualized, 3)
+
+
+def generate_ic_basis_cache(years=5):
+    """使用 wait_update 循环方式生成最近5年正确的IC年化贴水缓存（推荐）"""
+    logger.info(f"开始生成最近 {years} 年 IC 年化贴水缓存（wait_update 模式）...")
+
+    end_dt = date.today()
+    start_dt = end_dt - timedelta(days=years * 365 + 180)
+    logger.info(f"start_dt:{start_dt}")
+    token = os.getenv("TQ_ID")
+    pa = os.getenv("TQ_PASS")
+
+    api = TqApi(
+        backtest=TqBacktest(start_dt=start_dt, end_dt=end_dt),
+        auth=TqAuth(token, pa)
+    )
+
+    fut_symbol = "KQ.m@CFFEX.IC"
+    idx_symbol = "SSE.000905"
+
+    # 订阅日K线和Quote
+    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=2000)
+    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=2000)
+    quote = api.get_quote(fut_symbol)
+
+    records = []
+    last_dt = 0
+
+    logger.info("开始按时间顺序推进回测并计算年化贴水...")
+
+    try:
+        while True:
+            api.wait_update()
+
+            # 只在期货K线有更新时处理
+            if api.is_changing(fut_klines):
+                new_bars = fut_klines[fut_klines["datetime"] > last_dt]
+
+                for _, row in new_bars.iterrows():
+                    dt_nano = row["datetime"]
+                    dt = pd.to_datetime(dt_nano, unit='ns')
+
+                    fut_close = row["close"]
+
+                    # 匹配同一天指数K线
+                    idx_match = idx_klines[idx_klines["datetime"] == dt_nano]
+                    if idx_match.empty:
+                        continue
+
+                    idx_close = idx_match.iloc[0]["close"]
+                    if idx_close <= 0 or fut_close <= 0:
+                        continue
+
+                    # 获取当前剩余天数（关键：每次从 quote 取最新值）
+                    expire_rest_days = quote.underlying_quote.expire_rest_days
+                    if pd.isna(expire_rest_days) or expire_rest_days <= 0:
+                        expire_rest_days = 30  # 兜底
+
+                    ann_basis = calc_annualized_basis(fut_close, idx_close, expire_rest_days)
+
+                    if ann_basis is not None:
+                        records.append({
+                            "datetime": dt,
+                            "fut_close": round(fut_close, 2),
+                            "idx_close": round(idx_close, 2),
+                            "days_left": int(expire_rest_days),
+                            "ann_basis": ann_basis
+                        })
+
+                    if len(records) % 200 == 0:
+                        logger.info(f"已计算 {len(records)} 条记录，当前日期: {dt.date()}")
+
+                last_dt = fut_klines.iloc[-1]["datetime"]
+
+    except BacktestFinished:
+        logger.info("回测自然结束，开始保存缓存...")
+    except Exception as e:
+        logger.error(f"生成缓存过程中出错: {e}")
+    finally:
+        # 保存缓存
+        if records:
+            df = pd.DataFrame(records)
+            df.to_csv(CACHE_FILE, index=False, encoding='utf-8-sig')
+            logger.info(f"✅ 缓存生成成功！共 {len(df)} 条记录")
+            logger.info(f"时间范围: {df['datetime'].min().date()} ~ {df['datetime'].max().date()}")
+            logger.info(f"年化贴水平均值: {df['ann_basis'].mean():.2f}% | "
+                        f"最大: {df['ann_basis'].max():.2f}% | 最小: {df['ann_basis'].min():.2f}%")
+        else:
+            logger.error("未能生成任何有效记录")
+
+        api.close()
+
+
+if __name__ == "__main__":
+    generate_ic_basis_cache(years=5)

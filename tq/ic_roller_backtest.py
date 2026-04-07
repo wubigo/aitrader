@@ -1,5 +1,6 @@
 import logging
 import os
+from collections import deque
 from datetime import date, datetime
 import pandas as pd
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
@@ -46,12 +47,21 @@ TARGET_VOLATILITY = 0.15        # 目标年化波动率，用于调整仓位
 
 duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
 data_length = KLINE_DATA_LENGTH  # 窗口大小
+CHUNK_SIZE = 5000  # 内存优化：每积累 5000 行数据自动刷新到磁盘
 
 start_dt = date(2026, 1, 1)
 end_dt = date(2026, 3, 31)
 # 开始时间转为纳秒时间戳
 start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
+
+# 初始化保存文件名
+csv_file = f"IC_main_vs_CSI500_{duration}s_{start_dt}_{end_dt}.csv"
 # ============================================
+
+# 1. 设置计算用的滑动窗口，不再依赖全量的full_klines_data
+basis_window = deque(maxlen=ADAPTIVE_THRESHOLD_WINDOW)
+vol_window = deque(maxlen=VOLATILITY_WINDOW)
+
 
 # 从环境变量获取账号密码
 token = os.getenv("TQ_ID")
@@ -161,23 +171,19 @@ try:
 
                             # --- 动态阈值计算 ---
                             # 维护最近的年化贴水历史
-                            basis_history = [row["ann_basis"] for row in full_klines_data[-ADAPTIVE_THRESHOLD_WINDOW:] if "ann_basis" in row and row["ann_basis"] is not None]
-                            if len(basis_history) >= ADAPTIVE_THRESHOLD_WINDOW:
-                                dynamic_threshold = pd.Series(basis_history).quantile(0.75) # 使用75%分位数作为动态门槛
+                            if len(basis_window) >= ADAPTIVE_THRESHOLD_WINDOW:
+                                # deque 可以直接转换为 Series 进行分位数计算
+                                dynamic_threshold = pd.Series(list(basis_window)).quantile(0.75)
                             else:
                                 dynamic_threshold = ANNUALIZED_BASIS_THRESHOLD
 
                             # --- 波动率调整仓位 (简单的风险平价思路) ---
                             # 计算指数最近的年化波动率
-                            if len(full_klines_data) >= VOLATILITY_WINDOW:
-                                idx_closes = [row["index_close"] for row in full_klines_data[-VOLATILITY_WINDOW:] if row["index_close"] is not None]
-                                if len(idx_closes) >= VOLATILITY_WINDOW:
-                                    returns = pd.Series(idx_closes).pct_change().dropna()
-                                    ann_vol = returns.std() * (242 ** 0.5) # 简单年化，假设242个交易日
-                                    # 根据波动率调整仓位：目标波动率 / 当前波动率
-                                    vol_adj_volume = max(1, int(DEFAULT_TRADE_VOLUME * (TARGET_VOLATILITY / max(0.01, ann_vol))))
-                                else:
-                                    vol_adj_volume = DEFAULT_TRADE_VOLUME
+                            if len(vol_window) >= VOLATILITY_WINDOW:
+                                returns = pd.Series(list(vol_window)).pct_change().dropna()
+                                ann_vol = returns.std() * (242 ** 0.5)
+                                vol_adj_volume = max(1, int(DEFAULT_TRADE_VOLUME * (
+                                            TARGET_VOLATILITY / max(0.01, ann_vol))))
                             else:
                                 vol_adj_volume = DEFAULT_TRADE_VOLUME
 
@@ -247,6 +253,22 @@ try:
                         account_info = api.get_account()
                         row_data["balance"] = account_info.balance
                         full_klines_data.append(row_data)
+
+                        # 更新滑动窗口
+                        if ann_basis is not None:
+                            basis_window.append(ann_basis)  # 自动维持长度，旧数据自动溢出
+                        if idx_close is not None:
+                            vol_window.append(idx_close)
+
+                        # --- 内存优化：定期将数据刷入磁盘 ---
+                        if len(full_klines_data) >= CHUNK_SIZE:
+                            chunk_df = pd.DataFrame(full_klines_data)
+                            chunk_df["datetime"] = pd.to_datetime(chunk_df["datetime"], unit="ns")
+                            # 第一次写入需带 header，后续追加不带 header
+                            is_first_write = not os.path.exists(csv_file)
+                            chunk_df.to_csv(csv_file, mode='a', index=False, header=is_first_write)
+                            full_klines_data.clear()  # 关键：释放内存
+                            logger.info(f"💾 已自动同步 {CHUNK_SIZE} 行数据至磁盘，当前内存占用已释放")
                     else:
                         # 极少数情况下时间未对齐，直接用期货 bar
                         full_klines_data.append(row.to_dict())
@@ -254,16 +276,21 @@ try:
                 last_dt = futures_klines.iloc[-1]["datetime"]
 
 except BacktestFinished:
-    logger.info("\n回测结束，开始保存完整数据...")
+    logger.info("\n回测结束，开始保存剩余数据...")
 
     if full_klines_data:
-        full_df = pd.DataFrame(full_klines_data)
-        full_df["datetime"] = pd.to_datetime(full_df["datetime"], unit="ns")
+        chunk_df = pd.DataFrame(full_klines_data)
+        chunk_df["datetime"] = pd.to_datetime(chunk_df["datetime"], unit="ns")
+        # 如果文件不存在说明是第一次写（之前从未达到过 CHUNK_SIZE）
+        is_first_write = not os.path.exists(csv_file)
+        chunk_df.to_csv(csv_file, mode='a', index=False, header=is_first_write)
+        full_klines_data.clear()
 
-        # 保存（推荐 parquet）
-        csv_file = f"IC_main_vs_CSI500_{duration}s_{start_dt}_{end_dt}.csv"
-
-        backup_dataframe(full_df, csv_file)
+    # 读取最终生成的文件进行绩效分析
+    if os.path.exists(csv_file):
+        full_df = pd.read_csv(csv_file)
+        # 将日期转回 datetime 以便分析
+        full_df["datetime"] = pd.to_datetime(full_df["datetime"])
 
         logger.info(f"✅ 保存完成！共 {len(full_df)} 根 K 线")
         logger.info(f"   CSV: {csv_file}")

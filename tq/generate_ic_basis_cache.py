@@ -146,8 +146,10 @@ if __name__ == "__main__":
     start = time.perf_counter()
     # 代码
     years = os.getenv("IC_YEARS")
-    if not years:
-        years = 1
+    if years is not None:
+        years = int(years)
+    else:
+        years = 1  # 默认值
     generate_ic_basis_cache(years=years)
     end = time.perf_counter()
     print(f"运行时长：{(end - start) / 60:.2f} 分")

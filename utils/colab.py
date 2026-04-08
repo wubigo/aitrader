@@ -23,6 +23,8 @@ def safe_download(filepath, lpath="/"):
         # 仅在交互式 Notebook 环境中触发浏览器下载
         if IPython.get_ipython() is not None:
             from google.colab import files
+            lpath = f"{lpath}/{filepath}.bak"
+            print(lpath)
             files.download(filepath, lpath=f"{lpath}/{filepath}.bak")
             return
     except Exception as e:
@@ -46,6 +48,6 @@ df = pd.DataFrame(data)
 if IN_COLAB:
     from google.colab import files
     safe_download("ic_2021.csv", lpath="/")
-    from google.colab import drive
-    drive.mount('/content/drive')
-    df.to_csv('/content/drive/ic_2021.csv', index=False)
+    # from google.colab import drive
+    # drive.mount('/content/drive')
+    # df.to_csv('/content/drive/ic_2021.csv', index=False)

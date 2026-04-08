@@ -27,11 +27,10 @@ def generate_ic_basis_cache(years=5):
     """使用 wait_update 循环方式生成最近5年正确的IC年化贴水缓存（推荐）"""
     logger.info(f"开始生成最近 {years} 年 IC 年化贴水缓存（wait_update 模式）...")
 
-    # end_dt = date.today()
-    # start_dt = end_dt - timedelta(days=years * 365 + 180)
-    # logger.info(f"start_dt:{start_dt}")
-    start_dt = date(2021, 1, 1)
-    end_dt = date(2021, 3, 31)
+    end_dt = date.today()
+    start_dt = end_dt - timedelta(days=years * 365 + 180)
+    logger.info(f"start_dt:{start_dt}")
+
     token = os.getenv("TQ_ID")
     pa = os.getenv("TQ_PASS")
 

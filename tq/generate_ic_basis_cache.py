@@ -1,4 +1,5 @@
 import os
+import time
 import pandas as pd
 from datetime import date, timedelta
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished
@@ -10,7 +11,7 @@ from utils.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-CACHE_FILE = "ic_annualized_basis_5years_cache.csv"
+CACHE_FILE = "ic_2021.csv"
 
 
 def calc_annualized_basis(fut_price, spot_price, days):
@@ -26,9 +27,11 @@ def generate_ic_basis_cache(years=5):
     """使用 wait_update 循环方式生成最近5年正确的IC年化贴水缓存（推荐）"""
     logger.info(f"开始生成最近 {years} 年 IC 年化贴水缓存（wait_update 模式）...")
 
-    end_dt = date.today()
-    start_dt = end_dt - timedelta(days=years * 365 + 180)
-    logger.info(f"start_dt:{start_dt}")
+    # end_dt = date.today()
+    # start_dt = end_dt - timedelta(days=years * 365 + 180)
+    # logger.info(f"start_dt:{start_dt}")
+    start_dt = date(2021, 1, 1)
+    end_dt = date(2021, 3, 31)
     token = os.getenv("TQ_ID")
     pa = os.getenv("TQ_PASS")
 
@@ -41,9 +44,10 @@ def generate_ic_basis_cache(years=5):
     idx_symbol = "SSE.000905"
 
     # 订阅日K线和Quote
-    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=2000)
-    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=2000)
+    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=1)
+    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=1)
     quote = api.get_quote(fut_symbol)
+    current_underlying = quote.underlying_symbol
 
     records = []
     last_dt = 0
@@ -53,6 +57,13 @@ def generate_ic_basis_cache(years=5):
     try:
         while True:
             api.wait_update()
+
+            if api.is_changing(quote, "underlying_symbol"):
+                new_underlying = quote.underlying_symbol
+                logger.info(f"时间: {quote.datetime} 【主力切换】{current_underlying or '开始'} → {new_underlying} ")
+                current_underlying = new_underlying
+                quote = api.get_quote(fut_symbol)
+                current_underlying = quote.underlying_symbol
 
             # 只在期货K线有更新时处理
             if api.is_changing(fut_klines):
@@ -74,12 +85,15 @@ def generate_ic_basis_cache(years=5):
                         continue
 
                     # 获取当前剩余天数（关键：每次从 quote 取最新值）
+                    quote = api.get_quote(fut_symbol)
                     expire_rest_days = quote.underlying_quote.expire_rest_days
+
                     if pd.isna(expire_rest_days) or expire_rest_days <= 0:
                         expire_rest_days = 30  # 兜底
+                    else:
+                        logger.info(f"{dt} {quote.underlying_symbol} expires {expire_rest_days}")
 
                     ann_basis = calc_annualized_basis(fut_close, idx_close, expire_rest_days)
-
                     if ann_basis is not None:
                         records.append({
                             "datetime": dt,
@@ -114,4 +128,8 @@ def generate_ic_basis_cache(years=5):
 
 
 if __name__ == "__main__":
+    start = time.perf_counter()
+    # 代码
     generate_ic_basis_cache(years=5)
+    end = time.perf_counter()
+    print(f"运行时长：{(end - start) / 60:.2f} 分")

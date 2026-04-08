@@ -11,6 +11,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 CACHE_FILE = "ic_2021.csv"
+CHUNK_SIZE = 5000
 
 
 def calc_annualized_basis(fut_price, spot_price, days):
@@ -104,6 +105,15 @@ def generate_ic_basis_cache(years=5):
                     if len(records) % 200 == 0:
                         logger.info(f"已计算 {len(records)} 条记录，当前日期: {dt.date()}")
 
+                    if len(records) >= CHUNK_SIZE:
+                        chunk_df = pd.DataFrame(records)
+                        chunk_df["datetime"] = pd.to_datetime(chunk_df["datetime"], unit="ns")
+                        # 第一次写入需带 header，后续追加不带 header
+                        is_first_write = not os.path.exists(CACHE_FILE)
+                        chunk_df.to_csv(CACHE_FILE, mode='a', index=False, header=is_first_write)
+                        records.clear()  # 关键：释放内存
+                        logger.info(f"💾 已自动同步 {CHUNK_SIZE} 行数据至磁盘，当前内存占用已释放")
+
                 last_dt = fut_klines.iloc[-1]["datetime"]
 
     except BacktestFinished:
@@ -113,16 +123,19 @@ def generate_ic_basis_cache(years=5):
     finally:
         # 保存缓存
         if records:
-            df = pd.DataFrame(records)
-            # 使用示例
-            if IN_COLAB:
-                backup_file(CACHE_FILE)
-            else:
-                df.to_csv(CACHE_FILE, index=False, encoding='utf-8-sig')
-                logger.info(f"✅ 缓存生成成功！共 {len(df)} 条记录")
-                logger.info(f"时间范围: {df['datetime'].min().date()} ~ {df['datetime'].max().date()}")
-                logger.info(f"年化贴水平均值: {df['ann_basis'].mean():.2f}% | "
-                            f"最大: {df['ann_basis'].max():.2f}% | 最小: {df['ann_basis'].min():.2f}%")
+
+            chunk_df = pd.DataFrame(records)
+            chunk_df["datetime"] = pd.to_datetime(chunk_df["datetime"], unit="ns")
+            # 如果文件不存在说明是第一次写（之前从未达到过 CHUNK_SIZE）
+            is_first_write = not os.path.exists(csv_file)
+            chunk_df.to_csv(CACHE_FILE, mode='a', index=False, header=is_first_write)
+            records.clear()
+            backup_file(CACHE_FILE)
+            logger.info(f"✅ 缓存生成成功！共 {len(df)} 条记录")
+            logger.info(f"时间范围: {df['datetime'].min().date()} ~ {df['datetime'].max().date()}")
+            logger.info(f"年化贴水平均值: {df['ann_basis'].mean():.2f}% | "
+                        f"最大: {df['ann_basis'].max():.2f}% | 最小: {df['ann_basis'].min():.2f}%")
+
 
         else:
             logger.error("未能生成任何有效记录")

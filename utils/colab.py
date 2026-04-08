@@ -62,6 +62,6 @@ if IN_COLAB:
     from google.colab import files
     # safe_download("ic_2021.csv", lpath="/")
     safe_download("ic_2021.csv", save_dir="/content/output")
-    # from google.colab import drive
-    # drive.mount('/content/drive')
-    # df.to_csv('/content/drive/ic_2021.csv', index=False)
+    from google.colab import drive
+    drive.mount('/content/drive')
+    df.to_csv('/content/drive/ic_2021.csv', index=False)

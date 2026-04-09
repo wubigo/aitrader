@@ -23,12 +23,15 @@ def calc_annualized_basis(fut_price, spot_price, days):
     return round(annualized, 3)
 
 
-def generate_ic_basis_cache(years=5):
+def generate_ic_basis_cache(start: str, end: str, years=5):
     """使用 wait_update 循环方式生成最近5年正确的IC年化贴水缓存（推荐）"""
     logger.info(f"开始生成最近 {years} 年 IC 年化贴水缓存（wait_update 模式）...")
-
-    end_dt = date.today()
-    start_dt = end_dt - timedelta(days=years * 365)
+    if start is None and end is None:
+        end_dt = date.today()
+        start_dt = end_dt - timedelta(days=years * 365)
+    else:
+        start_dt = date.fromisoformat(start)
+        end_dt = date.fromisoformat(end)
     logger.info(f"start_dt:{start_dt}")
 
     token = os.getenv("TQ_ID")
@@ -155,13 +158,15 @@ IN_COLAB = is_colab()
 
 
 if __name__ == "__main__":
-    start = time.perf_counter()
+    stime = time.perf_counter()
     # 代码
     years = os.getenv("IC_YEARS")
     if years is not None:
         years = int(years)
     else:
         years = 1  # 默认值
-    generate_ic_basis_cache(years=years)
-    end = time.perf_counter()
-    logger.info(f"运行时长：{(end - start) / 60:.2f} 分")
+    start = '2017-10-01'
+    end = '2018-03-31'
+    generate_ic_basis_cache(years=years, start=start, end=end)
+    etime = time.perf_counter()
+    logger.info(f"运行时长：{(etime - stime) / 60:.2f} 分")

@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from collections import deque
 from datetime import date, datetime
 import pandas as pd
@@ -49,7 +50,7 @@ duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
 data_length = KLINE_DATA_LENGTH  # 窗口大小
 CHUNK_SIZE = 5000  # 内存优化：每积累 5000 行数据自动刷新到磁盘
 
-start_dt = date(2021, 1, 1)
+start_dt = date(2026, 1, 1)
 end_dt = date(2026, 3, 31)
 # 开始时间转为纳秒时间戳
 start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
@@ -102,7 +103,7 @@ has_opened_in_current_main = False
 entry_ann_basis = None # Track annualized basis at entry for profit-taking
 
 logger.info(f"开始回测：{futures_symbol}（中证500期货主连） vs {index_symbol}（中证500指数）")
-
+stime = time.perf_counter()
 try:
     while True:
         api.wait_update()
@@ -346,6 +347,8 @@ except BacktestFinished:
         logger.info("未获取到 K 线数据")
 
 finally:
+    etime = time.perf_counter()
+    logger.info(f"运行时长：{(etime - stime) / 60:.2f} 分")
     api.close()
 
 

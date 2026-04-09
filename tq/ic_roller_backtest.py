@@ -4,6 +4,7 @@ import time
 from collections import deque
 from datetime import date, datetime
 import pandas as pd
+from requests import ConnectTimeout
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
 from utils.backtest_logger import backup_dataframe
 from tq.generate_ic_basis_cache import get_ic_annualized_basis_percentile
@@ -345,6 +346,10 @@ except BacktestFinished:
 
     else:
         logger.info("未获取到 K 线数据")
+except ConnectTimeout:
+    logger.exception()
+    logger.info(f"test cancel at {test_time}")
+
 
 finally:
     etime = time.perf_counter()

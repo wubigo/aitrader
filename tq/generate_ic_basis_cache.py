@@ -127,7 +127,7 @@ def generate_ic_basis_cache(years=5):
             chunk_df = pd.DataFrame(records)
             chunk_df["datetime"] = pd.to_datetime(chunk_df["datetime"], unit="ns")
             # 如果文件不存在说明是第一次写（之前从未达到过 CHUNK_SIZE）
-            is_first_write = not os.path.exists(csv_file)
+            is_first_write = not os.path.exists(CACHE_FILE)
             chunk_df.to_csv(CACHE_FILE, mode='a', index=False, header=is_first_write)
             records.clear()
             backup_file(CACHE_FILE)

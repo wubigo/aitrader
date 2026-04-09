@@ -49,7 +49,7 @@ duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
 data_length = KLINE_DATA_LENGTH  # 窗口大小
 CHUNK_SIZE = 5000  # 内存优化：每积累 5000 行数据自动刷新到磁盘
 
-start_dt = date(2026, 1, 1)
+start_dt = date(2021, 1, 1)
 end_dt = date(2026, 3, 31)
 # 开始时间转为纳秒时间戳
 start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
@@ -322,6 +322,25 @@ except BacktestFinished:
             logger.info(f"   年化收益率 (CAGR): {cagr:.2%}")
             logger.info(f"   最大回撤 (Max Drawdown): {max_drawdown:.2%}")
             logger.info(f"   夏普比率 (Sharpe Ratio): {sharpe:.2f}")
+
+            # --- 年度和半年度收益分析 ---
+            full_df['year'] = full_df['datetime'].dt.year
+            full_df['half_year'] = full_df['datetime'].dt.month.apply(lambda x: 1 if x <= 6 else 2)
+
+            # 年度收益
+            yearly_returns = full_df.groupby('year')['balance'].agg(['first', 'last'])
+            yearly_returns['return'] = (yearly_returns['last'] / yearly_returns['first']) - 1
+            logger.info("📅 【年度收益分析】")
+            for year, row in yearly_returns.iterrows():
+                logger.info(f"   {year}年度: {row['return']:.2%}")
+
+            # 半年度收益
+            semi_annual_returns = full_df.groupby(['year', 'half_year'])['balance'].agg(['first', 'last'])
+            semi_annual_returns['return'] = (semi_annual_returns['last'] / semi_annual_returns['first']) - 1
+            logger.info("📆 【半年度收益分析】")
+            for (year, half), row in semi_annual_returns.iterrows():
+                period = f"{year} H{half}"
+                logger.info(f"   {period}: {row['return']:.2%}")
 
     else:
         logger.info("未获取到 K 线数据")

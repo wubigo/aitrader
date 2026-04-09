@@ -1,7 +1,9 @@
+from pathlib import Path
 import os
 import time
 import pandas as pd
 from datetime import date, timedelta
+
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished
 import logging
 
@@ -10,7 +12,9 @@ from utils.github_tools import backup_file
 setup_logging()
 logger = logging.getLogger(__name__)
 
-CACHE_FILE = "ic_discount_his.csv"
+
+current_dir = Path(__file__).resolve().parent
+CACHE_FILE = current_dir/"ic_discount_his.csv"
 CHUNK_SIZE = 5000
 
 

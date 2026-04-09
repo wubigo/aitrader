@@ -50,8 +50,8 @@ duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
 data_length = KLINE_DATA_LENGTH  # 窗口大小
 CHUNK_SIZE = 5000  # 内存优化：每积累 5000 行数据自动刷新到磁盘
 
-start_dt = date(2021, 1, 1)
-end_dt = date(2026, 3, 31)
+start_dt = date(2018, 1, 1)
+end_dt = date(2023, 1, 1)
 # 开始时间转为纳秒时间戳
 start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
 

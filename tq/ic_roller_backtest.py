@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pandas as pd
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
 from utils.backtest_logger import backup_dataframe
-
+from generate_ic_basis_cache import get_ic_annualized_basis_percentile
 from utils.logging_config import setup_logging
 
 setup_logging()
@@ -171,11 +171,14 @@ try:
 
                             # --- 动态阈值计算 ---
                             # 维护最近的年化贴水历史
-                            if len(basis_window) >= ADAPTIVE_THRESHOLD_WINDOW:
-                                # deque 可以直接转换为 Series 进行分位数计算
-                                dynamic_threshold = pd.Series(list(basis_window)).quantile(0.75)
-                            else:
-                                dynamic_threshold = ANNUALIZED_BASIS_THRESHOLD
+                            # --- 贴水监控：历史分位 ---
+                            stats = get_ic_annualized_basis_percentile(5, ann_basis)
+                            basis_percentile = stats["current_percentile"]
+                            if basis_percentile >= 90:
+                                logger.info(
+                                    f"🔍【贴水监控】{test_time} 当前年化贴水 {ann_basis:.2f}% 处于历史极高分位: {basis_percentile:.1f}%")
+
+                            dynamic_threshold = stats["p75"]
 
                             # --- 波动率调整仓位 (简单的风险平价思路) ---
                             # 计算指数最近的年化波动率
@@ -187,17 +190,6 @@ try:
                             else:
                                 vol_adj_volume = DEFAULT_TRADE_VOLUME
 
-                            # --- 贴水监控：历史分位 ---
-                            historical_basis = [r["ann_basis"] for r in full_klines_data if r.get("ann_basis") is not None]
-                            if historical_basis:
-                                # 计算当前贴水在历史中的分位 (Percentile Rank)
-                                smaller_count = sum(1 for x in historical_basis if x < ann_basis)
-                                basis_percentile = (smaller_count / len(historical_basis)) * 100
-                            else:
-                                basis_percentile = 50.0  # 初始中位值
-
-                            if basis_percentile >= 90:
-                                logger.info(f"🔍【贴水监控】当前年化贴水 {ann_basis:.2f}% 处于历史极高分位: {basis_percentile:.1f}%")
 
                             # === 核心判断：期货贴水报警 ===
                             if (ann_basis is not None and

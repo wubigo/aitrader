@@ -63,7 +63,6 @@ def generate_ic_basis_cache(start: str, end: str, years=5):
             if api.is_changing(quote, "underlying_symbol"):
                 new_underlying = quote.underlying_symbol
                 logger.info(f"时间: {quote.datetime} 【主力切换】{current_underlying or '开始'} → {new_underlying} ")
-                current_underlying = new_underlying
                 quote = api.get_quote(fut_symbol)
                 current_underlying = quote.underlying_symbol
 
@@ -154,10 +153,36 @@ def is_colab():
         return False
 
 
+def get_ic_annualized_basis_percentile(years=5, current_ann_basis=None):
+
+    df = pd.read_csv(CACHE_FILE)
+    df["datetime"] = pd.to_datetime(df["datetime"])
+
+    # 过滤最近 years 年数据
+    cutoff = pd.Timestamp.today() - pd.Timedelta(days=years * 365 + 100)
+    df = df[df["datetime"] >= cutoff]
+
+    historical = df["ann_basis"].dropna()
+
+    stats = {
+        "total_days": len(historical),
+        "mean": round(historical.mean(), 3),
+        "p75": round(historical.quantile(0.75), 3),
+        "p90": round(historical.quantile(0.90), 3),
+        "p95": round(historical.quantile(0.95), 3),
+        "current_percentile": None
+    }
+
+    if current_ann_basis is not None:
+        stats["current_percentile"] = round((historical < current_ann_basis).mean() * 100, 2)
+
+    return stats
+
+
 IN_COLAB = is_colab()
 
 
-if __name__ == "__main__":
+def reset_cache():
     stime = time.perf_counter()
     # 代码
     years = os.getenv("IC_YEARS")
@@ -170,3 +195,9 @@ if __name__ == "__main__":
     generate_ic_basis_cache(years=years, start=start, end=end)
     etime = time.perf_counter()
     logger.info(f"运行时长：{(etime - stime) / 60:.2f} 分")
+
+
+if __name__ == "__main__":
+    stats = get_ic_annualized_basis_percentile(5, current_ann_basis=7)
+    print(stats)
+    print(stats["current_percentile"])

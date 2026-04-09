@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pandas as pd
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
 from utils.backtest_logger import backup_dataframe
-from generate_ic_basis_cache import get_ic_annualized_basis_percentile
+from tq.generate_ic_basis_cache import get_ic_annualized_basis_percentile
 from utils.logging_config import setup_logging
 
 setup_logging()

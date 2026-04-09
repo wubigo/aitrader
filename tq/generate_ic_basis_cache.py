@@ -10,7 +10,7 @@ from utils.github_tools import backup_file
 setup_logging()
 logger = logging.getLogger(__name__)
 
-CACHE_FILE = "ic_2021.csv"
+CACHE_FILE = "ic_discount_his.csv"
 CHUNK_SIZE = 5000
 
 

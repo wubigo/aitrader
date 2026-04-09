@@ -164,4 +164,4 @@ if __name__ == "__main__":
         years = 1  # 默认值
     generate_ic_basis_cache(years=years)
     end = time.perf_counter()
-    print(f"运行时长：{(end - start) / 60:.2f} 分")
+    logger.info(f"运行时长：{(end - start) / 60:.2f} 分")

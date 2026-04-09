@@ -130,13 +130,12 @@ def generate_ic_basis_cache(years=5):
             is_first_write = not os.path.exists(CACHE_FILE)
             chunk_df.to_csv(CACHE_FILE, mode='a', index=False, header=is_first_write)
             records.clear()
-            backup_file(CACHE_FILE)
-            logger.info(f"✅ 缓存生成成功！共 {len(df)} 条记录")
-            logger.info(f"时间范围: {df['datetime'].min().date()} ~ {df['datetime'].max().date()}")
-            logger.info(f"年化贴水平均值: {df['ann_basis'].mean():.2f}% | "
-                        f"最大: {df['ann_basis'].max():.2f}% | 最小: {df['ann_basis'].min():.2f}%")
-
-
+            if IN_COLAB:
+                backup_file(CACHE_FILE)
+            logger.info(f"✅ 缓存生成成功！共 {len(chunk_df)} 条记录")
+            logger.info(f"时间范围: {chunk_df['datetime'].min().date()} ~ {chunk_df['datetime'].max().date()}")
+            logger.info(f"年化贴水平均值: {chunk_df['ann_basis'].mean():.2f}% | "
+                        f"最大: {chunk_df['ann_basis'].max():.2f}% | 最小: {chunk_df['ann_basis'].min():.2f}%")
         else:
             logger.error("未能生成任何有效记录")
 

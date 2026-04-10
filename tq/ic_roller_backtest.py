@@ -315,6 +315,7 @@ class ICBasisRollerStrategy:
 
 
 if __name__ == "__main__":
+    //增加IM贴水回测
     config = StrategyConfig()
     strategy = ICBasisRollerStrategy(config)
     strategy.run()

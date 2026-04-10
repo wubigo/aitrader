@@ -2,359 +2,319 @@ import logging
 import os
 import time
 from collections import deque
+from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import List, Dict, Optional, Set, Any
+
 import pandas as pd
 from requests import ConnectTimeout
 from tqsdk import TqApi, TqAuth, TqBacktest, BacktestFinished, TargetPosTask, TqSim
+
 from utils.backtest_logger import backup_dataframe
 from tq.generate_ic_basis_cache import get_ic_annualized_basis_percentile
 from utils.logging_config import setup_logging
 
+# --- Setup Logging ---
 setup_logging()
 logger = logging.getLogger(__name__)
 
+@dataclass
+class StrategyConfig:
+    """Strategy configuration parameters."""
+    futures_symbol: str = "KQ.m@CFFEX.IC"
+    index_symbol: str = "SSE.000905"
+    duration: int = 60 * 60 * 24  # Daily K-line
+    data_length: int = 100
+    initial_balance: float = 1_000_000.0
 
-def calc_annualized_basis(fut_price, spot_price, days):
-    """计算年化贴水率"""
-    # 确保价格和天数有效，防止NaN值、None或负天数
-    if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0:
-        return None
-    # 防止除以零
-    if spot_price == 0:
-        logger.warning("Spot price is zero, cannot calculate annualized basis.")
-        return None
+    # Entry/Exit Thresholds
+    annualized_basis_threshold: float = 8.0
+    min_days_to_expiry_open: int = 7
+    max_days_to_expiry_close: int = 6
+    profit_taking_basis_pct: float = 0.5
 
-    basis_ratio = (spot_price - fut_price) / spot_price
-    annualized = basis_ratio * 365 / days * 100
-    return round(annualized, 3)
+    # Advanced Filters
+    index_sma_period: int = 20
+    adaptive_threshold_window: int = 60
+    volatility_window: int = 20
+    target_volatility: float = 0.15
+    default_trade_volume: int = 1
 
+    # Backtest Period
+    start_dt: date = date(2018, 1, 1)
+    end_dt: date = date(2023, 1, 1)
 
+    # System Config
+    chunk_size: int = 5000
 
-# ================== 配置区域 ==================
-futures_symbol = "KQ.m@CFFEX.IC"  # IC 主连合约
-index_symbol = "SSE.000905"  # 中证500指数（官方符号）
-# --- 常量定义 ---
-ONE_DAY_SECONDS = 60 * 60 * 24
-KLINE_DATA_LENGTH = 100
-INITIAL_ACCOUNT_BALANCE = 1000000
-ANNUALIZED_BASIS_THRESHOLD = 8.0  # 年化贴水报警阈值
-MIN_DAYS_TO_EXPIRATION_OPEN = 7   # 距离到期天数 > 此值才允许开仓
-MAX_DAYS_TO_EXPIRATION_CLOSE = 6  # 距离到期天数 <= 此值触发平仓
-PROFIT_TAKING_BASIS_PCT = 0.5   # 止盈比例，例如 0.5 表示当贴水修复了50%时止盈
-INDEX_SMA_PERIOD = 20           # 指数SMA周期，用于趋势过滤
-DEFAULT_TRADE_VOLUME = 1        # 默认交易手数
-ADAPTIVE_THRESHOLD_WINDOW = 60 # 动态阈值窗口（K线数量）
-VOLATILITY_WINDOW = 20          # 波动率窗口
-TARGET_VOLATILITY = 0.15        # 目标年化波动率，用于调整仓位
+    @property
+    def start_nano(self) -> int:
+        return int(pd.Timestamp(self.start_dt).timestamp() * 1e9)
 
-duration = ONE_DAY_SECONDS  # K 线周期（秒），60=1分钟线
-data_length = KLINE_DATA_LENGTH  # 窗口大小
-CHUNK_SIZE = 5000  # 内存优化：每积累 5000 行数据自动刷新到磁盘
-
-start_dt = date(2018, 1, 1)
-end_dt = date(2023, 1, 1)
-# 开始时间转为纳秒时间戳
-start_nano = int(pd.Timestamp(start_dt).timestamp() * 1e9)
-
-# 初始化保存文件名
-csv_file = f"IC_main_vs_CSI500_{duration}s_{start_dt}_{end_dt}.csv"
-# ============================================
-
-# 1. 设置计算用的滑动窗口，不再依赖全量的full_klines_data
-basis_window = deque(maxlen=ADAPTIVE_THRESHOLD_WINDOW)
-vol_window = deque(maxlen=VOLATILITY_WINDOW)
+    @property
+    def csv_file(self) -> str:
+        return f"IC_main_vs_CSI500_{self.duration}s_{self.start_dt}_{self.end_dt}.csv"
 
 
-# 从环境变量获取账号密码
-token = os.getenv("TQ_ID")
-pa = os.getenv("TQ_PASS")
+class PerformanceAnalyzer:
+    """Helper class to calculate and log strategy performance."""
 
-# 定义模拟账户：初始资金 INITIAL_ACCOUNT_BALANCE
-sim_account = TqSim(init_balance=INITIAL_ACCOUNT_BALANCE, account_id='bigo')
+    @staticmethod
+    def calculate_metrics(df: pd.DataFrame, config: StrategyConfig, final_balance: float):
+        if df.empty or "balance" not in df.columns:
+            logger.info("No balance data available for performance analysis.")
+            return
 
-# 1. 创建回测 API
-api = TqApi(
-    backtest=TqBacktest(start_dt=start_dt, end_dt=end_dt),
-    account=sim_account,
-    auth=TqAuth(token, pa)
-)
+        df["datetime"] = pd.to_datetime(df["datetime"])
+
+        # 1. CAGR
+        days = (config.end_dt - config.start_dt).days
+        cagr = (final_balance / config.initial_balance) ** (365.0 / max(days, 1)) - 1
+
+        # 2. Max Drawdown
+        df["cum_max_balance"] = df["balance"].cummax()
+        df["drawdown"] = (df["balance"] - df["cum_max_balance"]) / df["cum_max_balance"]
+        max_drawdown = df["drawdown"].min()
+
+        # 3. Sharpe Ratio
+        returns = df["balance"].pct_change().dropna()
+        sharpe = (returns.mean() / returns.std() * (242 ** 0.5)) if returns.std() > 0 else 0
+
+        logger.info("📈 【策略绩效评估】")
+        logger.info(f"   起始资金: {config.initial_balance:,.2f}")
+        logger.info(f"   最终资金: {final_balance:,.2f}")
+        logger.info(f"   年化收益率 (CAGR): {cagr:.2%}")
+        logger.info(f"   最大回撤 (Max Drawdown): {max_drawdown:.2%}")
+        logger.info(f"   夏普比率 (Sharpe Ratio): {sharpe:.2f}")
+
+        # 4. Period Analysis
+        PerformanceAnalyzer._log_period_returns(df)
+
+    @staticmethod
+    def _log_period_returns(df: pd.DataFrame):
+        df['year'] = df['datetime'].dt.year
+        df['half_year'] = df['datetime'].dt.month.apply(lambda x: 1 if x <= 6 else 2)
+
+        yearly = df.groupby('year')['balance'].agg(['first', 'last'])
+        logger.info("📅 【年度收益分析】")
+        for year, row in yearly.iterrows():
+            logger.info(f"   {year}年度: {(row['last'] / row['first'] - 1):.2%}")
+
+        semi = df.groupby(['year', 'half_year'])['balance'].agg(['first', 'last'])
+        logger.info("📆 【半年度收益分析】")
+        for (year, half), row in semi.iterrows():
+            logger.info(f"   {year} H{half}: {(row['last'] / row['first'] - 1):.2%}")
 
 
-quote = api.get_quote(futures_symbol)
-current_underlying = quote.underlying_symbol
-expire = quote.underlying_quote.expire_datetime
+class ICBasisRollerStrategy:
+    """Main strategy implementation class."""
 
+    def __init__(self, config: StrategyConfig):
+        self.cfg = config
+        self.api: Optional[TqApi] = None
+        self.sim_account = TqSim(init_balance=self.cfg.initial_balance, account_id='bigo')
 
-# 订阅期货主连 K 线 + 指数 K 线（同周期，确保时间对齐）
-# 增加 fill_min_period=0 参数，确保不向前追溯历史数据
-futures_klines = api.get_kline_serial(futures_symbol, duration, data_length=data_length, fill_min_period=0)
-index_klines = api.get_kline_serial(index_symbol, duration, data_length=data_length, fill_min_period=0)
-quote = api.get_quote(futures_symbol)  # 用于监控主力切换
+        # State Variables
+        self.current_underlying: str = ""
+        self.has_opened_in_current_main: bool = False
+        self.entry_ann_basis: Optional[float] = None
+        self.last_bar_dt: int = 0
+        self.processed_trade_ids: Set[str] = set()
 
-full_klines_data = []  # 用于最终保存所有 K 线的数据字典
-last_dt = 0  # 上次已保存的期货 datetime
+        # Windows & Data collection
+        self.basis_window = deque(maxlen=self.cfg.adaptive_threshold_window)
+        self.vol_window = deque(maxlen=self.cfg.volatility_window)
+        self.full_klines_data: List[Dict[str, Any]] = []
 
-target_pos_task = TargetPosTask(api, current_underlying)
+        # Tq Objects
+        self.target_pos_task: Optional[TargetPosTask] = None
+        self.futures_klines = None
+        self.index_klines = None
+        self.quote_main = None
 
-# 已处理的成交 ID 集合，避免重复打印
-processed_trade_ids = set()
+    def _init_api(self):
+        token = os.getenv("TQ_ID")
+        pa = os.getenv("TQ_PASS")
+        self.api = TqApi(
+            backtest=TqBacktest(start_dt=self.cfg.start_dt, end_dt=self.cfg.end_dt),
+            account=self.sim_account,
+            auth=TqAuth(token, pa)
+        )
 
-# 新增：记录当前主力合约是否已开仓的标记
-has_opened_in_current_main = False
-entry_ann_basis = None # Track annualized basis at entry for profit-taking
+        # Initialize quotes and klines
+        quote = self.api.get_quote(self.cfg.futures_symbol)
+        self.current_underlying = quote.underlying_symbol
+        self.target_pos_task = TargetPosTask(self.api, self.current_underlying)
 
-logger.info(f"开始回测：{futures_symbol}（中证500期货主连） vs {index_symbol}（中证500指数）")
-stime = time.perf_counter()
-try:
-    while True:
-        api.wait_update()
+        self.futures_klines = self.api.get_kline_serial(
+            self.cfg.futures_symbol, self.cfg.duration,
+            data_length=self.cfg.data_length, fill_min_period=0
+        )
+        self.index_klines = self.api.get_kline_serial(
+            self.cfg.index_symbol, self.cfg.duration,
+            data_length=self.cfg.data_length, fill_min_period=0
+        )
+        self.quote_main = self.api.get_quote(self.cfg.futures_symbol)
 
-        # 2. 获取账户所有成交记录
-        trades = api.get_trade()
+    def _calc_annualized_basis(self, fut_price: float, spot_price: float, days: int) -> Optional[float]:
+        if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0 or spot_price == 0:
+            return None
+        basis_ratio = (spot_price - fut_price) / spot_price
+        return round(basis_ratio * 365 / days * 100, 3)
+
+    def _handle_trades(self):
+        trades = self.api.get_trade()
         for trade_id, trade in trades.items():
-            # 过滤条件：该合约的成交 且 是新发现的成交记录
-            # TqSdk 的 Trade 对象使用 instrument_id (合约代码) 和 exchange_id (交易所代码)
-            # 拼接方式通常为 "EXCHANGE.INSTRUMENT"
             trade_symbol = f"{trade.exchange_id}.{trade.instrument_id}"
-            if trade_symbol == current_underlying and trade_id not in processed_trade_ids:
-                # trade_date_time 是纳秒时间戳
+            if trade_symbol == self.current_underlying and trade_id not in self.processed_trade_ids:
                 trade_time = datetime.fromtimestamp(trade.trade_date_time / 1e9)
-
                 logger.info(f"--- 交易成功通知 ---")
-                logger.info(f"Trade时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 买卖方向:{trade.direction}")
-                processed_trade_ids.add(trade_id)
-                # 3. 检查是否已经达到目标持仓（可选）
-                pos = api.get_position(current_underlying)
-                if pos.pos_long == 1: # Assuming target is 1 long position
-                    logger.info("目标持仓已达成，查询结束。")
-                    break
+                logger.info(f"Trade时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 方向:{trade.direction}")
+                self.processed_trade_ids.add(trade_id)
 
+    def _handle_main_switch(self):
+        if self.api.is_changing(self.quote_main, "underlying_symbol"):
+            new_underlying = self.quote_main.underlying_symbol
+            logger.info(f"【主力切换】{self.current_underlying or '开始'} → {new_underlying} | 时间: {self.quote_main.datetime}")
+            self.current_underlying = new_underlying
+            self.target_pos_task = TargetPosTask(self.api, self.current_underlying)
+            self.has_opened_in_current_main = False
 
+    def _flush_data_to_disk(self, is_final: bool = False):
+        if not self.full_klines_data:
+            return
 
-
-        # ================== 监控主力合约切换 ==================
-        if api.is_changing(quote, "underlying_symbol"):
-            new_underlying = quote.underlying_symbol
-            logger.info(f"【主力切换】{current_underlying or '开始'} → {new_underlying}  | 时间: {quote.datetime}")
-            current_underlying = new_underlying
-            target_pos_task = TargetPosTask(api, current_underlying)
-            # 关键：主力切换后，重置开仓标记，允许新合约贴水开仓
-            has_opened_in_current_main = False
-
-        # ================== 累积 K 线 + 贴水判断 ==================
-        if api.is_changing(futures_klines):
-
-            new_bars = futures_klines[(futures_klines["datetime"] > last_dt) & (futures_klines["datetime"] >= start_nano)]
-
-            if not new_bars.empty:
-                for idx, row in new_bars.iterrows():
-                    fut_dt = row["datetime"]
-                    fut_close = row["close"]
-
-                    # 在指数 K 线中查找完全相同时间的 bar（同周期下时间精确对齐）
-                    idx_match = index_klines[index_klines["datetime"] == fut_dt]
-
-                    if not idx_match.empty:
-                        idx_close = idx_match.iloc[0]["close"]
-
-                        if idx_close > 0:  # 防止除零
-                            discount = (idx_close - fut_close) / idx_close
-                            discount_bp = round(discount * 10000, 2)   # 关键：保留2位小数
-                            test_time = pd.to_datetime(fut_dt, unit='ns')
-
-                            quote = api.get_quote(futures_symbol)
-                            expire_rest_days = quote.underlying_quote.expire_rest_days
-                            position = api.get_position(current_underlying)
-                            ann_basis = calc_annualized_basis(fut_close, idx_close, expire_rest_days)
-
-                            # --- 趋势过滤 ---
-                            index_sma = index_klines["close"].rolling(window=INDEX_SMA_PERIOD).mean().iloc[-1]
-                            is_uptrend = idx_close > index_sma
-
-                            # --- 动态阈值计算 ---
-                            # 维护最近的年化贴水历史
-                            # --- 贴水监控：历史分位 ---
-                            stats = get_ic_annualized_basis_percentile(5, ann_basis)
-                            basis_percentile = stats["current_percentile"]
-                            if basis_percentile >= 90:
-                                logger.info(
-                                    f"🔍【贴水监控】{test_time} 当前年化贴水 {ann_basis:.2f}% 处于历史极高分位: {basis_percentile:.1f}%")
-
-                            dynamic_threshold = stats["p75"]
-
-                            # --- 波动率调整仓位 (简单的风险平价思路) ---
-                            # 计算指数最近的年化波动率
-                            if len(vol_window) >= VOLATILITY_WINDOW:
-                                returns = pd.Series(list(vol_window)).pct_change().dropna()
-                                ann_vol = returns.std() * (242 ** 0.5)
-                                vol_adj_volume = max(1, int(DEFAULT_TRADE_VOLUME * (
-                                            TARGET_VOLATILITY / max(0.01, ann_vol))))
-                            else:
-                                vol_adj_volume = DEFAULT_TRADE_VOLUME
-
-
-                            # === 核心判断：期货贴水报警 ===
-                            if (ann_basis is not None and
-                                    ann_basis > dynamic_threshold and # 使用动态阈值
-                                    expire_rest_days > MIN_DAYS_TO_EXPIRATION_OPEN and
-                                    position.pos_long == 0 and
-                                    test_time.date() > start_dt and
-                                    is_uptrend and # 仅在上涨趋势或非强下跌趋势中开仓
-                                    not has_opened_in_current_main):
-                                alert_time = test_time
-                                logger.info(f"🚨【贴水报警】合约: {current_underlying} 时间: {alert_time} | "
-                                      f"期货收盘: {fut_close:.2f} | "
-                                      f"指数收盘: {idx_close:.2f} | "
-                                      f"年化贴水: {ann_basis:.2f} (分位: {basis_percentile:.1f}%) | "
-                                      f"动态阈值: {dynamic_threshold:.2f} | "
-                                      f"指数SMA({INDEX_SMA_PERIOD}): {index_sma:.2f}")
-
-                                target_pos_task.set_target_volume(vol_adj_volume)
-                                has_opened_in_current_main = True  # 标记已执行，本合约周期不再触发
-                                entry_ann_basis = ann_basis        # 记录开仓时的年化贴水
-                                logger.info(f"✅ 已下达【买入 {vol_adj_volume} 手】指令，等待成交...")
-
-                            elif position.pos_long > 0 and entry_ann_basis is not None:
-                                # 计算贴水修复比例
-                                basis_repair_pct = (entry_ann_basis - ann_basis) / entry_ann_basis
-                                if basis_repair_pct >= PROFIT_TAKING_BASIS_PCT:
-                                    logger.info(f"💰【止盈平仓】合约: {current_underlying} 达到止盈条件 (修复率: {basis_repair_pct:.2%})，触发平仓。")
-                                    target_pos_task.set_target_volume(0)
-                                    has_opened_in_current_main = True # 平仓后本合约不再操作
-                                    entry_ann_basis = None
-                                    continue
-
-                            elif expire_rest_days <= MAX_DAYS_TO_EXPIRATION_CLOSE and position.pos_long > 0:
-                                logger.info(
-                                    f"⏰【临期平仓】合约: {current_underlying} 距离到期仅剩 {expire_rest_days} 天，触发强制平仓。多头浮动盈亏: {position.float_profit_long}")
-                                target_pos_task.set_target_volume(0)
-                                # 注意：平仓后可以设置标记，防止同一合约在最后几天又因为贴水被买回来
-                                has_opened_in_current_main = True
-                                continue  # 跳过本次循环，不再进入下方的买入判断
-
-                            else:
-                                logger.info(f"{test_time }-持仓: {position.pos_long}，浮动盈亏: {position.float_profit_long}, 合约：{current_underlying}， 剩余天数: {expire_rest_days}")
-
-
-                        # 可选：把指数价和贴水也存进 full_klines（方便后续分析）
-                        # 收集数据作为字典
-                        row_data = row.to_dict()
-                        row_data["index_close"] = idx_close
-                        row_data["discount_bp"] = discount_bp
-                        row_data["ann_basis"] = ann_basis
-                        row_data["basis_percentile"] = basis_percentile
-                        # 获取账户资金情况，TqSdk 中通过 api.get_account() 获取
-                        account_info = api.get_account()
-                        row_data["balance"] = account_info.balance
-                        full_klines_data.append(row_data)
-
-                        # 更新滑动窗口
-                        if ann_basis is not None:
-                            basis_window.append(ann_basis)  # 自动维持长度，旧数据自动溢出
-                        if idx_close is not None:
-                            vol_window.append(idx_close)
-
-                        # --- 内存优化：定期将数据刷入磁盘 ---
-                        if len(full_klines_data) >= CHUNK_SIZE:
-                            chunk_df = pd.DataFrame(full_klines_data)
-                            chunk_df["datetime"] = pd.to_datetime(chunk_df["datetime"], unit="ns")
-                            # 第一次写入需带 header，后续追加不带 header
-                            is_first_write = not os.path.exists(csv_file)
-                            chunk_df.to_csv(csv_file, mode='a', index=False, header=is_first_write)
-                            full_klines_data.clear()  # 关键：释放内存
-                            logger.info(f"💾 已自动同步 {CHUNK_SIZE} 行数据至磁盘，当前内存占用已释放")
-                    else:
-                        # 极少数情况下时间未对齐，直接用期货 bar
-                        full_klines_data.append(row.to_dict())
-
-                last_dt = futures_klines.iloc[-1]["datetime"]
-
-except BacktestFinished:
-    logger.info("\n回测结束，开始保存剩余数据...")
-
-    if full_klines_data:
-        chunk_df = pd.DataFrame(full_klines_data)
+        chunk_df = pd.DataFrame(self.full_klines_data)
         chunk_df["datetime"] = pd.to_datetime(chunk_df["datetime"], unit="ns")
-        # 如果文件不存在说明是第一次写（之前从未达到过 CHUNK_SIZE）
-        is_first_write = not os.path.exists(csv_file)
-        chunk_df.to_csv(csv_file, mode='a', index=False, header=is_first_write)
-        full_klines_data.clear()
+        is_first_write = not os.path.exists(self.cfg.csv_file)
+        chunk_df.to_csv(self.cfg.csv_file, mode='a', index=False, header=is_first_write)
+        self.full_klines_data.clear()
+        if not is_final:
+            logger.info(f"💾 已自动同步数据至磁盘，内存已释放")
 
-    # 读取最终生成的文件进行绩效分析
-    if os.path.exists(csv_file):
-        full_df = pd.read_csv(csv_file)
-        # 将日期转回 datetime 以便分析
-        full_df["datetime"] = pd.to_datetime(full_df["datetime"])
+    def _get_vol_adjusted_volume(self) -> int:
+        if len(self.vol_window) >= self.cfg.volatility_window:
+            returns = pd.Series(list(self.vol_window)).pct_change().dropna()
+            ann_vol = returns.std() * (242 ** 0.5)
+            return max(1, int(self.cfg.default_trade_volume * (self.cfg.target_volatility / max(0.01, ann_vol))))
+        return self.cfg.default_trade_volume
 
-        logger.info(f"✅ 保存完成！共 {len(full_df)} 根 K 线")
-        logger.info(f"   CSV: {csv_file}")
+    def _process_new_bars(self):
+        if not self.api.is_changing(self.futures_klines):
+            return
 
-        # 额外统计贴水报警次数（方便查看）
-        if "discount_bp" in full_df.columns:
-            alert_count = (full_df["discount_bp"] >= 50).sum()
-            logger.info(f"📊 本次回测共触发贴水≥50bp 报警 {alert_count} 次")
+        new_bars = self.futures_klines[
+            (self.futures_klines["datetime"] > self.last_bar_dt) &
+            (self.futures_klines["datetime"] >= self.cfg.start_nano)
+        ]
 
-        # --- 策略绩效分析 ---
-        if "balance" in full_df.columns:
-            # 1. 年化收益率 (CAGR)
-            start_balance = INITIAL_ACCOUNT_BALANCE
-            account_info = api.get_account()
-            end_balance = account_info.balance
-            days = (end_dt - start_dt).days
-            if days > 0:
-                cagr = (end_balance / start_balance) ** (365.0 / days) - 1
-            else:
-                cagr = 0
+        for _, row in new_bars.iterrows():
+            fut_dt, fut_close = row["datetime"], row["close"]
+            idx_match = self.index_klines[self.index_klines["datetime"] == fut_dt]
 
-            # 2. 最大回撤 (MDD)
-            full_df["cum_max_balance"] = full_df["balance"].cummax()
-            full_df["drawdown"] = (full_df["balance"] - full_df["cum_max_balance"]) / full_df["cum_max_balance"]
-            max_drawdown = full_df["drawdown"].min()
+            if idx_match.empty:
+                self.full_klines_data.append(row.to_dict())
+                continue
 
-            # 3. 夏普比率 (Sharpe Ratio)
-            returns = full_df["balance"].pct_change().dropna()
-            if returns.std() > 0:
-                sharpe = (returns.mean() / returns.std()) * (242 ** 0.5) # 假设242个交易日
-            else:
-                sharpe = 0
+            idx_close = idx_match.iloc[0]["close"]
+            test_time = pd.to_datetime(fut_dt, unit='ns')
 
-            logger.info(f"📈 【策略绩效评估】")
-            logger.info(f"   起始资金: {start_balance:,.2f}")
-            logger.info(f"   最终资金: {end_balance:,.2f}")
-            logger.info(f"   年化收益率 (CAGR): {cagr:.2%}")
-            logger.info(f"   最大回撤 (Max Drawdown): {max_drawdown:.2%}")
-            logger.info(f"   夏普比率 (Sharpe Ratio): {sharpe:.2f}")
+            # Feature calculation
+            discount_bp = round(((idx_close - fut_close) / idx_close) * 10000, 2) if idx_close > 0 else 0
+            quote = self.api.get_quote(self.cfg.futures_symbol)
+            expire_days = quote.underlying_quote.expire_rest_days
+            position = self.api.get_position(self.current_underlying)
+            ann_basis = self._calc_annualized_basis(fut_close, idx_close, expire_days)
 
-            # --- 年度和半年度收益分析 ---
-            full_df['year'] = full_df['datetime'].dt.year
-            full_df['half_year'] = full_df['datetime'].dt.month.apply(lambda x: 1 if x <= 6 else 2)
+            # Indicators
+            index_sma = self.index_klines["close"].rolling(window=self.cfg.index_sma_period).mean().iloc[-1]
+            stats = get_ic_annualized_basis_percentile(5, ann_basis) if ann_basis else {"current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
+            basis_percentile = stats["current_percentile"]
+            dynamic_threshold = stats["p75"]
 
-            # 年度收益
-            yearly_returns = full_df.groupby('year')['balance'].agg(['first', 'last'])
-            yearly_returns['return'] = (yearly_returns['last'] / yearly_returns['first']) - 1
-            logger.info("📅 【年度收益分析】")
-            for year, row in yearly_returns.iterrows():
-                logger.info(f"   {year}年度: {row['return']:.2%}")
+            self._evaluate_and_execute(
+                ann_basis, dynamic_threshold, expire_days, position,
+                test_time, idx_close, fut_close, index_sma, basis_percentile
+            )
 
-            # 半年度收益
-            semi_annual_returns = full_df.groupby(['year', 'half_year'])['balance'].agg(['first', 'last'])
-            semi_annual_returns['return'] = (semi_annual_returns['last'] / semi_annual_returns['first']) - 1
-            logger.info("📆 【半年度收益分析】")
-            for (year, half), row in semi_annual_returns.iterrows():
-                period = f"{year} H{half}"
-                logger.info(f"   {period}: {row['return']:.2%}")
+            # Record Data
+            row_dict = {
+                **row.to_dict(),
+                "index_close": idx_close, "discount_bp": discount_bp,
+                "ann_basis": ann_basis, "basis_percentile": basis_percentile,
+                "balance": self.api.get_account().balance
+            }
+            self.full_klines_data.append(row_dict)
 
-    else:
-        logger.info("未获取到 K 线数据")
-except ConnectTimeout:
-    logger.exception()
-    logger.info(f"test cancel at {test_time}")
+            # Update Windows
+            if ann_basis is not None: self.basis_window.append(ann_basis)
+            if idx_close > 0: self.vol_window.append(idx_close)
+
+            if len(self.full_klines_data) >= self.cfg.chunk_size:
+                self._flush_data_to_disk()
+
+        if not new_bars.empty:
+            self.last_bar_dt = self.futures_klines.iloc[-1]["datetime"]
+
+    def _evaluate_and_execute(self, ann_basis, threshold, expire_days, position,
+                              test_time, idx_close, fut_close, index_sma, basis_perc):
+        # 1. Entry Logic
+        if (ann_basis is not None and ann_basis > threshold and
+            expire_days > self.cfg.min_days_to_expiry_open and
+            position.pos_long == 0 and test_time.date() > self.cfg.start_dt and
+            idx_close > index_sma and not self.has_opened_in_current_main):
+
+            vol = self._get_vol_adjusted_volume()
+            logger.info(f"🚨【贴水报警】合约: {self.current_underlying} 时间: {test_time} | 年化贴水: {ann_basis:.2f}% | 动态阈值: {threshold:.2f}")
+            self.target_pos_task.set_target_volume(vol)
+            self.has_opened_in_current_main = True
+            self.entry_ann_basis = ann_basis
+            logger.info(f"✅ 已下达【买入 {vol} 手】指令")
+
+        # 2. Profit Taking
+        elif position.pos_long > 0 and self.entry_ann_basis:
+            repair_pct = (self.entry_ann_basis - ann_basis) / self.entry_ann_basis
+            if repair_pct >= self.cfg.profit_taking_basis_pct:
+                logger.info(f"💰【止盈平仓】合约: {self.current_underlying} 修复率: {repair_pct:.2%}")
+                self.target_pos_task.set_target_volume(0)
+                self.has_opened_in_current_main = True
+                self.entry_ann_basis = None
+
+        # 3. Expiry Close
+        elif expire_days <= self.cfg.max_days_to_expiry_close and position.pos_long > 0:
+            logger.info(f"⏰【临期平仓】合约: {self.current_underlying} 剩余天数: {expire_days}")
+            self.target_pos_task.set_target_volume(0)
+            self.has_opened_in_current_main = True
+
+    def run(self):
+        """Execute the backtest."""
+        self._init_api()
+        start_time = time.perf_counter()
+
+        try:
+            while True:
+                self.api.wait_update()
+                self._handle_trades()
+                self._handle_main_switch()
+                self._process_new_bars()
+
+        except BacktestFinished:
+            logger.info("\n回测完成，正在汇总数据...")
+            self._flush_data_to_disk(is_final=True)
+
+            if os.path.exists(self.cfg.csv_file):
+                final_df = pd.read_csv(self.cfg.csv_file)
+                PerformanceAnalyzer.calculate_metrics(final_df, self.cfg, self.api.get_account().balance)
+
+        except ConnectTimeout:
+            logger.exception("Network timeout during backtest.")
+        finally:
+            logger.info(f"运行时长：{(time.perf_counter() - start_time) / 60:.2f} 分")
+            if self.api:
+                self.api.close()
 
 
-finally:
-    etime = time.perf_counter()
-    logger.info(f"运行时长：{(etime - stime) / 60:.2f} 分")
-    api.close()
-
-
-
+if __name__ == "__main__":
+    config = StrategyConfig()
+    strategy = ICBasisRollerStrategy(config)
+    strategy.run()

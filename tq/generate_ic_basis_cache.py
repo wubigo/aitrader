@@ -172,7 +172,7 @@ if __name__ == "__main__":
     # 需要生成的列表
     tasks = [
         {"fut": "KQ.m@CFFEX.IM", "idx": "SSE.000852", "file": "im_discount_his.csv"},
-        {"fut": "KQ.m@CFFEX.IC", "idx": "SSE.000905", "file": "ic_discount_his.csv"},
+        # {"fut": "KQ.m@CFFEX.IC", "idx": "SSE.000905", "file": "ic_discount_his.csv"},
 
     ]
 

@@ -315,7 +315,21 @@ class ICBasisRollerStrategy:
 
 
 if __name__ == "__main__":
-    //增加IM贴水回测
-    config = StrategyConfig()
-    strategy = ICBasisRollerStrategy(config)
-    strategy.run()
+    # 定义回测目标列表
+    targets = [
+        {"futures": "KQ.m@CFFEX.IC", "index": "SSE.000905", "name": "IC (中证500)"},
+        {"futures": "KQ.m@CFFEX.IM", "index": "SSE.000852", "name": "IM (中证1000)"},
+    ]
+
+    for target in targets:
+        logger.info(f"\n" + "="*30)
+        logger.info(f"🚀 开始执行 {target['name']} 贴水策略回测")
+        logger.info("="*30)
+
+        config = StrategyConfig(
+            futures_symbol=target["futures"],
+            index_symbol=target["index"]
+        )
+        strategy = ICBasisRollerStrategy(config)
+        strategy.run()
+

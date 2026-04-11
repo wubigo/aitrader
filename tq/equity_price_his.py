@@ -1,6 +1,7 @@
 import logging
 import os
-from datetime import date, timedelta
+
+from pathlib import Path
 import pandas as pd
 
 from tqsdk import TqApi, TqAuth, TqAccount, TqBacktest, BacktestFinished

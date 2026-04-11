@@ -1,8 +1,9 @@
 import logging
 import os
-
+from typing import Optional
 from pathlib import Path
 import pandas as pd
+
 
 from tqsdk import TqApi, TqAuth, TqAccount, TqBacktest, BacktestFinished
 
@@ -19,6 +20,38 @@ current_dir = Path(__file__).resolve().parent
 
 
 DURATION_DAY = 86400
+
+
+def calc_annualized_basis(fut_price: float, spot_price: float, days: int) -> Optional[float]:
+    """计算年化贴水率"""
+    if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0 or spot_price <= 0:
+        return None
+    basis_ratio = (spot_price - fut_price) / spot_price
+    annualized = basis_ratio * 365 / days * 100
+    return round(annualized, 3)
+
+
+def update_ann_basis(csv_path: str, output_path=None):
+    # 1. 读取数据
+    df = pd.read_csv(csv_path)
+
+    # 2. 计算 ann_basis
+    df["ann_basis"] = df.apply(
+        lambda row: calc_annualized_basis(
+            row.get("fut_close"),
+            row.get("idx_close"),
+            row.get("days_left", 0)
+        ),
+        axis=1
+    )
+
+    # 3. 保存
+    if output_path:
+        df.to_csv(output_path, index=False)
+    else:
+        df.to_csv(csv_path, index=False)
+
+    print("✅ ann_basis 已全部更新")
 
 
 def sync_ic_discount(csv_path: str, kline_df: pd.DataFrame, output_path=None):
@@ -166,3 +199,5 @@ if __name__ == "__main__":
     finally:
         api.close()
         logging.info("🔌 天勤连接已关闭。")
+
+    update_ann_basis("ic_discount_his.csv")

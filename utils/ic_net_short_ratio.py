@@ -10,12 +10,16 @@ import logging
 import sys
 from datetime import datetime, timedelta
 import pandas as pd
+from pathlib import Path
 
 try:
     import akshare as ak
     AKSHARE_OK = True
 except ImportError:
     AKSHARE_OK = False
+
+current_dir = Path(__file__).resolve().parent
+
 
 try:
     from rich.console import Console
@@ -57,17 +61,18 @@ def calc_net_short_ratio(df: pd.DataFrame) -> dict:
     if df.empty:
         raise ValueError("数据为空，请检查输入")
 
-    required = {"long_vol", "short_vol"}
+    required = {"long_open_interest", "short_open_interest"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"缺少必要列：{missing}，当前列：{list(df.columns)}")
 
     df = df.copy()
-    df["long_vol"] = pd.to_numeric(df["long_vol"], errors="coerce").fillna(0)
-    df["short_vol"] = pd.to_numeric(df["short_vol"], errors="coerce").fillna(0)
+    print(df.columns)
+    df["long_vol"] = pd.to_numeric(df["long_open_interest"], errors="coerce").fillna(0)
+    df["short_vol"] = pd.to_numeric(df["short_open_interest"], errors="coerce").fillna(0)
 
-    total_long = df["long_vol"].sum()
-    total_short = df["short_vol"].sum()
+    total_long = df["long_vol"][:-1].sum()
+    total_short = df["short_vol"][:-1].sum()
     total_oi = total_long + total_short
     net_short = total_short - total_long
 
@@ -117,13 +122,23 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """将 akshare 返回的 DataFrame 标准化为含 member/long_vol/short_vol 的格式"""
     col_map = {}
     for col in df.columns:
-        if "多头" in col or "long" in col.lower() or "买" in col:
+        col_lower = col.lower()
+        # 优先匹配具体的量（持仓量）
+        if ("open_interest" in col_lower and "long" in col_lower) or "多头持仓" in col:
             col_map[col] = "long_vol"
-        elif "空头" in col or "short" in col.lower() or "卖" in col:
+        elif ("open_interest" in col_lower and "short" in col_lower) or "空头持仓" in col:
             col_map[col] = "short_vol"
-        elif "会员" in col or "member" in col.lower() or "席位" in col:
-            col_map[col] = "member"
+        # 匹配席位/会员名称
+        elif "party_name" in col_lower or "会员" in col or "席位" in col or "member" in col_lower:
+            # 如果已经映射了 member 且当前列包含 party_name，优先使用 party_name
+            if "member" not in col_map or "party_name" in col_lower:
+                col_map[col] = "member"
+
     df = df.rename(columns=col_map)
+
+    # 移除合计行 (通常 rank 为 999 或为空)
+    if "rank" in df.columns:
+        df = df[df["rank"].astype(str) != "999"]
 
     # 若自动识别失败，按列位置映射（中金所格式：会员, 多头持仓, 多头增减, 空头持仓, 空头增减）
     if "long_vol" not in df.columns or "short_vol" not in df.columns:
@@ -160,7 +175,18 @@ def fetch_cffex_positions(symbol: str = "IC", trade_date: str = None) -> pd.Data
                 if not raw:
                     logger.info(f"{d} no data")
                 else:
-                    df_raw = raw['IC2606']
+                    # 动态寻找匹配 symbol 的 key (例如 'IC2606' 包含 'IC')
+                    df_raw = None
+                    for key in raw.keys():
+                        if symbol in key:
+                            df_raw = raw[key]
+                            break
+
+                    if df_raw is None:
+                        logger.warning(f"Found keys {list(raw.keys())} but none match {symbol}")
+                        continue
+
+                    print(f"Using key: {key}, columns: {df_raw.columns}")
                     df = _normalize_columns(df_raw)
                     df.attrs["trade_date"] = d
                     df.attrs["symbol"] = symbol
@@ -442,79 +468,36 @@ def main():
     print("─" * 40)
 
     symbol = "IC"
-    trade_date = None
-    mode = None
-
+    symbol_list = [symbol]
     # 解析命令行参数
     # 用法: python ic_net_short_ratio.py [IC|IF|IM] [YYYYMMDD] [--history] [--manual]
-    args = sys.argv[1:]
-    force_history = "--history" in args
-    force_manual = "--manual" in args
-    for arg in args:
-        if arg.upper() in ("IC", "IF", "IM", "IH"):
-            symbol = arg.upper()
-        elif arg.isdigit() and len(arg) == 8:
-            trade_date = arg
 
-    if force_history:
-        mode = "history"
-    elif force_manual:
-        mode = "manual"
-    elif args and not force_manual:
-        mode = "auto" if AKSHARE_OK else "manual"
 
-    # 交互式选择
-    if mode is None:
-        if AKSHARE_OK:
-            print("检测到 akshare，支持自动获取中金所数据")
-            print("1. 自动获取最新数据（需联网）")
-            print("2. 手动输入CSV数据")
-            print("3. 查看近20日历史趋势")
-            choice = input("请选择模式 [1/2/3，默认1]：").strip() or "1"
-            mode = {"1": "auto", "2": "manual", "3": "history"}.get(choice, "auto")
-        else:
-            print("未检测到 akshare，切换为手动输入模式")
-            print("提示：pip install akshare 可启用自动获取")
-            mode = "manual"
 
-        if mode in ("auto", "history"):
-            sym_input = input("合约品种 [IC/IF/IM，默认IC]：").strip().upper()
-            if sym_input in ("IC", "IF", "IM", "IH"):
-                symbol = sym_input
 
     # 执行
     try:
-        if mode == "history":
-            if RICH_OK:
-                console.print(f"[dim]正在获取 {symbol} 近20日数据...[/dim]")
-            hist = fetch_history(symbol=symbol, days=20)
-            print_history_trend(hist, symbol)
+        dict_df = pd.read_csv(f'{current_dir}/../tq/date-ic-all.csv')
+        dict_df['KQ.m@CFFEX.IC'] = dict_df['KQ.m@CFFEX.IC'].str.replace('CFFEX.', '', regex=False)
+        records = dict_df[['date', 'KQ.m@CFFEX.IC']].to_dict('records')
+        for row in records:
 
-        elif mode == "auto":
-            if RICH_OK:
-                console.print(f"[dim]正在获取 {symbol} 持仓数据...[/dim]")
-            else:
-                print(f"正在获取 {symbol} 持仓数据...")
-            df = fetch_cffex_positions(symbol=symbol, trade_date=trade_date)
-            result = calc_net_short_ratio(df)
-            print_report(result, df,
-                         df.attrs.get("trade_date", "未知"),
-                         df.attrs.get("symbol", symbol))
-
-        else:  # manual
-            df = load_manual_data()
-            result = calc_net_short_ratio(df)
-            print_report(result, df,
-                         df.attrs.get("trade_date", "手动输入"),
-                         df.attrs.get("symbol", "IC"))
+            trade_date = row['date']
+            main_symbol = row['KQ.m@CFFEX.IC']
+            # df = fetch_cffex_positions(symbol=symbol, trade_date=trade_date)
+            df = ak.get_cffex_rank_table(date=trade_date, vars_list=symbol_list)
+            trade_info = df[main_symbol]
+            result = calc_net_short_ratio(trade_info)
+            print_report(result, trade_info,
+                             trade_date, main_symbol)
 
     except ImportError as e:
-        print(f"\n依赖缺失：{e}")
-        print("安装命令：pip install akshare pandas rich")
+        logging.exception(f"\n依赖缺失：{e}")
+
     except RuntimeError as e:
-        print(f"\n运行时错误：{e}")
+        logging.exception(f"\n运行时错误：{e}")
     except Exception as e:
-        print(f"\n未预期错误：{e}")
+        logging.exception(f"\n未预期错误：{e}")
         import traceback
         traceback.print_exc()
 

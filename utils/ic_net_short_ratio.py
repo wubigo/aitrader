@@ -495,48 +495,68 @@ def save_report_to_csv(result_dict, file_path="ic_report_history.csv"):
 def main():
     print("\nIC主力合约净空比计算工具")
     print("─" * 40)
-
     symbol = "IC"
     symbol_list = [symbol]
-    # 解析命令行参数
-    # 用法: python ic_net_short_ratio.py [IC|IF|IM] [YYYYMMDD] [--history] [--manual]
+    report_file = "ic_net_short_records.csv"
 
-
-
-
-    # 执行
     try:
+        # 1. 加载任务清单
         dict_df = pd.read_csv(f'{current_dir}/../tq/date-ic-all.csv')
         dict_df['KQ.m@CFFEX.IC'] = dict_df['KQ.m@CFFEX.IC'].str.replace('CFFEX.', '', regex=False)
         records = dict_df[['date', 'KQ.m@CFFEX.IC']].to_dict('records')
+
+        # 2. 预先加载已有的记录日期，避免重复调用 API
+        existing_dates = set()
+        if Path(report_file).exists():
+            try:
+                temp_df = pd.read_csv(report_file)
+                if 'trade_date' in temp_df.columns:
+                    existing_dates = set(temp_df['trade_date'].astype(str).tolist())
+                print(f"检测到本地记录，已跳过 {len(existing_dates)} 条历史数据。")
+            except Exception as e:
+                print(f"读取历史记录文件失败，将重新爬取: {e}")
+
         for row in records:
-
-            trade_date = row['date']
+            trade_date = str(row['date'])
             main_symbol = row['KQ.m@CFFEX.IC']
-            # df = fetch_cffex_positions(symbol=symbol, trade_date=trade_date)
-            df = ak.get_cffex_rank_table(date=trade_date, vars_list=symbol_list)
-            trade_info = df[main_symbol]
-            result = calc_net_short_ratio(trade_info)
 
-            # 2. 补充 CSV 需要的维度信息
-            result['trade_date'] = trade_date
-            result['symbol'] = main_symbol
-            level, desc = interpret_signal(result["net_short_ratio"])
-            result['signal_level'] = level
+            # --- 新增逻辑：检查是否已存在记录 ---
+            if trade_date in existing_dates:
+                # print(f"日期 {trade_date} 已有记录，跳过 API 调用。") # 可选日志
+                continue
 
-            # 3. 终端打印报告
-            print_report(result, trade_info, trade_date, main_symbol)
+            # --- 原始抓取逻辑 ---
+            print(f"正在获取 {trade_date} ({main_symbol}) 的数据...")
+            try:
+                # 调用可能失败的接口
+                df = ak.get_cffex_rank_table(date=trade_date, vars_list=symbol_list)
 
-            # 4. 保存/更新到 CSV
-            save_report_to_csv(result, file_path="ic_net_short_records.csv")
+                if main_symbol not in df:
+                    print(f"警告：日期 {trade_date} 的返回结果中未找到合约 {main_symbol}")
+                    continue
 
-    except ImportError as e:
-        logging.exception(f"\n依赖缺失：{e}")
+                trade_info = df[main_symbol]
+                result = calc_net_short_ratio(trade_info)
 
-    except RuntimeError as e:
-        logging.exception(f"\n运行时错误：{e}")
+                # 补充结果维度
+                result['trade_date'] = trade_date
+                result['symbol'] = main_symbol
+                level, desc = interpret_signal(result["net_short_ratio"])
+                result['signal_level'] = level
+
+                # 3. 打印并保存
+                print_report(result, trade_info, trade_date, main_symbol)
+                save_report_to_csv(result, file_path=report_file)
+
+                # 更新内存中的已存在日期集合，防止 records 中有重复日期
+                existing_dates.add(trade_date)
+
+            except Exception as e:
+                print(f"获取 {trade_date} 数据失败: {e}")
+                continue  # 单次失败不影响整个循环
+
     except Exception as e:
-        logging.exception(f"\n未预期错误：{e}")
+        logging.exception(f"\n运行过程中出现严重错误：{e}")
         import traceback
         traceback.print_exc()
 

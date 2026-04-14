@@ -461,6 +461,35 @@ def run_single(symbol: str = "IC", trade_date: str = None) -> dict:
     return result
 
 
+def save_report_to_csv(result_dict, file_path="ic_report_history.csv"):
+    """
+    保存结果到CSV：若日期存在则更新，不存在则追加。
+    """
+    new_df = pd.DataFrame([result_dict])
+
+    if Path(file_path).exists():
+        old_df = pd.read_csv(file_path)
+        # 确保 trade_date 是字符串格式以便比较
+        old_df['trade_date'] = old_df['trade_date'].astype(str)
+        new_df['trade_date'] = new_df['trade_date'].astype(str)
+
+        # 检查日期是否已存在
+        if result_dict['trade_date'] in old_df['trade_date'].values:
+            # 删除旧记录并合并新记录
+            old_df = old_df[old_df['trade_date'] != result_dict['trade_date']]
+            combined_df = pd.concat([old_df, new_df], ignore_index=True)
+        else:
+            # 直接追加
+            combined_df = pd.concat([old_df, new_df], ignore_index=True)
+    else:
+        combined_df = new_df
+
+    # 按日期排序后保存
+    combined_df.sort_values("trade_date", inplace=True)
+    combined_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+    print(f"已更新数据至: {file_path}")
+
+
 # ─── 主程序入口 ──────────────────────────────────────────────
 
 def main():
@@ -488,8 +517,18 @@ def main():
             df = ak.get_cffex_rank_table(date=trade_date, vars_list=symbol_list)
             trade_info = df[main_symbol]
             result = calc_net_short_ratio(trade_info)
-            print_report(result, trade_info,
-                             trade_date, main_symbol)
+
+            # 2. 补充 CSV 需要的维度信息
+            result['trade_date'] = trade_date
+            result['symbol'] = main_symbol
+            level, desc = interpret_signal(result["net_short_ratio"])
+            result['signal_level'] = level
+
+            # 3. 终端打印报告
+            print_report(result, trade_info, trade_date, main_symbol)
+
+            # 4. 保存/更新到 CSV
+            save_report_to_csv(result, file_path="ic_net_short_records.csv")
 
     except ImportError as e:
         logging.exception(f"\n依赖缺失：{e}")

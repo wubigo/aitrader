@@ -240,3 +240,11 @@ A 股股指期货（IF/IC/IH/IM）的理论价格 ≈ 现货指数 + 持仓资�
 ## TQSDK
 
 Exception: 与 wss://backtest.shinnytech.com/t/nfmd/front/mobile 的连接失败，每日 19:00-19:30 为日常运维时间
+
+
+# 数据
+
+## 期货
+
+### AKSHARE
+1. CFFEX 数据源开始日期为 20100416

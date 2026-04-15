@@ -492,6 +492,8 @@ def main():
         for row in records:
             trade_date = str(row['date'])
             main_symbol = row['KQ.m@CFFEX.IC']
+            if pd.isna(main_symbol):
+                continue
 
             # --- 新增逻辑：检查是否已存在记录 ---
             if trade_date in existing_dates:

@@ -67,7 +67,6 @@ def calc_net_short_ratio(df: pd.DataFrame) -> dict:
         raise ValueError(f"缺少必要列：{missing}，当前列：{list(df.columns)}")
 
     df = df.copy()
-    print(df.columns)
     df["long_vol"] = pd.to_numeric(df["long_open_interest"], errors="coerce").fillna(0)
     df["short_vol"] = pd.to_numeric(df["short_open_interest"], errors="coerce").fillna(0)
 
@@ -186,7 +185,6 @@ def fetch_cffex_positions(symbol: str = "IC", trade_date: str = None) -> pd.Data
                         logger.warning(f"Found keys {list(raw.keys())} but none match {symbol}")
                         continue
 
-                    print(f"Using key: {key}, columns: {df_raw.columns}")
                     df = _normalize_columns(df_raw)
                     df.attrs["trade_date"] = d
                     df.attrs["symbol"] = symbol
@@ -201,83 +199,6 @@ def fetch_cffex_positions(symbol: str = "IC", trade_date: str = None) -> pd.Data
         df.attrs["trade_date"] = trade_date
         df.attrs["symbol"] = symbol
         return df
-
-
-# ─── 手动输入模式 ──────────────────────────────────────────────
-
-SAMPLE_DATA = """会员名称,多头持仓量,空头持仓量
-国泰君安,12500,18200
-中信期货,9800,15600
-华泰期货,8200,14100
-申万期货,7600,12800
-招商期货,6900,11500
-银河期货,5800,9200
-海通期货,5200,8600
-广发期货,4800,7900
-东证期货,4200,7100
-中金期货,3900,6800
-兴业期货,3500,6200
-永安期货,3200,5700
-光大期货,2900,5100
-南华期货,2600,4600
-东方期货,2300,4200
-平安期货,2100,3800
-浙商期货,1900,3400
-国信期货,1700,3100
-方正期货,1500,2800
-建信期货,1300,2500"""
-
-
-def load_manual_data() -> pd.DataFrame:
-    """
-    手动粘贴持仓数据（CSV格式）。
-
-    格式：
-        会员名称,多头持仓量,空头持仓量
-        国泰君安,12500,18200
-        ...
-
-    直接回车则加载内置示例数据（仅用于功能演示）。
-    """
-    print("\n" + "="*60)
-    print("手动数据模式 —— 请粘贴CSV格式持仓数据")
-    print("格式：会员名称,多头持仓量,空头持仓量")
-    print("（直接回车使用内置示例数据）")
-    print("="*60)
-    print("示例（前3行）：")
-    for line in SAMPLE_DATA.split("\n")[:4]:
-        print(" ", line)
-    print("  ...")
-    print("\n粘贴数据后输入空行结束，或直接回车使用示例：")
-
-    lines = []
-    try:
-        while True:
-            line = input()
-            if not line.strip():
-                break
-            lines.append(line)
-    except EOFError:
-        pass
-
-    raw = "\n".join(lines) if lines else SAMPLE_DATA
-
-    from io import StringIO
-    df = pd.read_csv(StringIO(raw))
-    df.columns = df.columns.str.strip()
-
-    col_map = {}
-    for col in df.columns:
-        if "多" in col or "long" in col.lower():
-            col_map[col] = "long_vol"
-        elif "空" in col or "short" in col.lower():
-            col_map[col] = "short_vol"
-        else:
-            col_map[col] = "member"
-    df = df.rename(columns=col_map)
-    df.attrs["trade_date"] = "手动输入"
-    df.attrs["symbol"] = "IC"
-    return df
 
 
 # ─── 历史趋势分析 ──────────────────────────────────────────────

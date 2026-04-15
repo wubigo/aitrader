@@ -152,7 +152,7 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df[keep].copy()
 
 
-def fetch_cffex_positions(symbol: str = "IC", trade_date: str = None) -> pd.DataFrame:
+def fetch_cffex_positions(symbol: str = ["IC"], trade_date: str = None) -> pd.DataFrame:
     """
     通过 akshare 获取中金所持仓龙虎榜数据。
 
@@ -363,6 +363,55 @@ def print_history_trend(hist: pd.DataFrame, symbol: str):
 
 # ─── 对外接口（供其他脚本 import 调用）─────────────────────────
 
+def run_single_from_cache(symbol: str = "IC", trade_date: str = None) -> dict:
+    """
+    对外提供和 run_single 一样的接口，但从本地 CSV 缓存中读取数据。
+
+    参数：
+    symbol     : 合约品种，如 "IC"
+    trade_date : 交易日期，格式 "YYYYMMDD" 或 "YYYY-12-31" (需与CSV中格式一致)
+    """
+    report_file = Path(f"{current_dir}/ic_net_short_records.csv")
+
+    if not report_file.exists():
+        raise FileNotFoundError(f"本地缓存文件 {report_file} 不存在")
+
+    # 读取缓存
+    cache_df = pd.read_csv(report_file)
+
+    # 统一日期格式为字符串进行匹配
+    # 如果 CSV 里的日期是 2018-01-11 这种格式，而输入是 20180111，需要做一层转换
+    search_date = str(trade_date)
+    if "-" not in search_date and len(search_date) == 8:
+        search_date = f"{search_date[:4]}-{search_date[4:6]}-{search_date[6:]}"
+
+    # 过滤数据
+    match = cache_df[(cache_df['trade_date'].astype(str) == search_date) &
+                     (cache_df['symbol'].str.contains(symbol))]
+
+    if match.empty:
+        # raise ValueError(f"在缓存中未找到 {search_date} 对应的 {symbol} 数据")
+        return {}
+
+    # 取最近的一条记录并转为字典
+    result = match.iloc[-1].to_dict()
+
+    # 确保数值类型正确（从CSV读取后可能是numpy类型，转回原生Python类型以保持兼容性）
+    return {
+        "total_long": int(result["total_long"]),
+        "total_short": int(result["total_short"]),
+        "net_short": int(result["net_short"]),
+        "total_oi": int(result["total_oi"]),
+        "net_short_ratio": float(result["net_short_ratio"]),
+        "concentration_top5_short": float(result["concentration_top5_short"]),
+        "concentration_top5_long": float(result["concentration_top5_long"]),
+        "trade_date": result["trade_date"],
+        "symbol": result["symbol"],
+        "signal_level": result["signal_level"],
+        "signal_desc": interpret_signal(result["net_short_ratio"])[1]  # 重新获取描述
+    }
+
+
 def run_single(symbol: str = "IC", trade_date: str = None) -> dict:
     """
     一行调用接口，返回完整结果字典。
@@ -372,6 +421,9 @@ def run_single(symbol: str = "IC", trade_date: str = None) -> dict:
         r = run_single("IC", "20250415")
         print(r["net_short_ratio"], r["signal_level"])
     """
+    result = run_single_from_cache(trade_date=trade_date)
+    if result:
+        return result
     df = fetch_cffex_positions(symbol=symbol, trade_date=trade_date)
     result = calc_net_short_ratio(df)
     result["trade_date"] = df.attrs.get("trade_date")

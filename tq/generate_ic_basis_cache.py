@@ -35,14 +35,15 @@ def _flush_records(records: List[Dict], cache_file: Path):
     chunk_df.to_csv(cache_file, mode='a', index=False, header=is_first_write)
     logger.info(f"💾 已同步 {len(records)} 行数据至磁盘: {cache_file.name}")
 
-def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str, start: Optional[str] = None, end: Optional[str] = None, years: int = 5):
+
+def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str, start: Optional[str] = None, end: Optional[str] = None):
     """通用回测统计缓存生成函数"""
     cache_file = current_dir / cache_file_name
     logger.info(f"开始生成 {fut_symbol} (vs {idx_symbol}) 的年化贴水缓存...")
 
     if start is None and end is None:
         end_dt = date.today()
-        start_dt = end_dt - timedelta(days=years * 365+100)
+        start_dt = end_dt - timedelta(days=2000)
     else:
         start_dt = date.fromisoformat(start)
         end_dt = date.fromisoformat(end)
@@ -103,7 +104,7 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
                             "datetime": dt,
                             "fut_close": round(fut_close, 2),
                             "idx_close": round(idx_close, 2),
-                            "IC0": quote.underlying_symbol,
+                            # "IC0": quote.underlying_symbol,
                             "days_left": int(expire_rest_days),
                             "ann_basis": ann_basis
                         })
@@ -179,8 +180,7 @@ if __name__ == "__main__":
     ]
 
     # 获取环境变量控制的参数
-    years_env = os.getenv("IC_YEARS")
-    years = int(years_env) if years_env else 1
+
 
     for task in tasks:
         # 如果文件已存在，可以选择跳过或重新生成（此处演示为重新生成/追加，根据逻辑逻辑建议先手动删除旧文件若需全新生成）
@@ -188,10 +188,9 @@ if __name__ == "__main__":
         generate_basis_cache(
             fut_symbol=task["fut"],
             idx_symbol=task["idx"],
-            cache_file_name=task["file"],
-            years=years
+            cache_file_name=task["file"]
         )
 
         # 打印简单统计
-        stats = get_basis_percentile(task["file"], years=years)
+        stats = get_basis_percentile(task["file"])
         logger.info(f"{task['fut']} 统计结果: {stats}")

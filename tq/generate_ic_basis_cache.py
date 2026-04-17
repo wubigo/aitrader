@@ -96,13 +96,15 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
                     if pd.isna(expire_rest_days) or expire_rest_days <= 0:
                         expire_rest_days = 30  # 兜底
 
+
                     ann_basis = calc_annualized_basis(fut_close, idx_close, expire_rest_days)
+                    d = dt.date()
                     if ann_basis is not None:
                         records.append({
-                            "datetime": dt,
+                            "datetime": d,
                             "fut_close": round(fut_close, 2),
                             "idx_close": round(idx_close, 2),
-                            "IC0": quote.underlying_quote,
+                            "IC0": quote.underlying_symbol,
                             "days_left": int(expire_rest_days),
                             "ann_basis": ann_basis
                         })
@@ -179,7 +181,7 @@ if __name__ == "__main__":
 
     # 获取环境变量控制的参数
     years_env = os.getenv("IC_YEARS")
-    years = int(years_env) if years_env else 8
+    years = int(years_env) if years_env else 1
 
     for task in tasks:
         # 如果文件已存在，可以选择跳过或重新生成（此处演示为重新生成/追加，根据逻辑逻辑建议先手动删除旧文件若需全新生成）

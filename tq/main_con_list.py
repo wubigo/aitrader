@@ -28,9 +28,9 @@ quote = api.get_quote(symbol)
 print("最新价：", quote.last_price)
 print("成交量：", quote.volume)
 
-d = api.query_his_cont_quotes(['KQ.m@CFFEX.IC'], n=2700)
-print(d)
-d.to_csv('./date-ic-all.csv')
+d = api.query_his_cont_quotes(['KQ.m@CFFEX.IC'], n=300)
+
+d.to_csv('./date-ic-all.csv', index=False)
 
 
 

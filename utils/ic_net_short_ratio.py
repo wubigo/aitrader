@@ -493,6 +493,7 @@ def main():
             trade_date = str(row['date'])
             main_symbol = row['KQ.m@CFFEX.IC']
             if pd.isna(main_symbol):
+                logging.debug(f"{trade_date}对应的主力合约在AK没有记录(query_his_cont_quotes接口支持的最早时间2015-04-16")
                 continue
 
             # --- 新增逻辑：检查是否已存在记录 ---

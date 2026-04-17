@@ -102,6 +102,7 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
                             "datetime": dt,
                             "fut_close": round(fut_close, 2),
                             "idx_close": round(idx_close, 2),
+                            "IC0": quote.underlying_quote,
                             "days_left": int(expire_rest_days),
                             "ann_basis": ann_basis
                         })
@@ -171,8 +172,8 @@ def get_im_annualized_basis_percentile(years=5, current_ann_basis=None):
 if __name__ == "__main__":
     # 需要生成的列表
     tasks = [
-        {"fut": "KQ.m@CFFEX.IM", "idx": "SSE.000852", "file": "im_discount_his.csv"},
-        # {"fut": "KQ.m@CFFEX.IC", "idx": "SSE.000905", "file": "ic_discount_his.csv"},
+        # {"fut": "KQ.m@CFFEX.IM", "idx": "SSE.000852", "file": "im_discount_his.csv"},
+        {"fut": "KQ.m@CFFEX.IC", "idx": "SSE.000905", "file": "ic_discount_his.csv"},
 
     ]
 

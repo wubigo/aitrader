@@ -31,7 +31,7 @@ def calc_annualized_basis(fut_price: float, spot_price: float, days: int) -> Opt
     return round(annualized, 3)
 
 
-def update_ann_basis(csv_path: str, output_path=None):
+def update_ann_basis(csv_path: str):
     # 1. 读取数据
     df = pd.read_csv(csv_path)
 
@@ -45,11 +45,7 @@ def update_ann_basis(csv_path: str, output_path=None):
         axis=1
     )
 
-    # 3. 保存
-    if output_path:
-        df.to_csv(output_path, index=False)
-    else:
-        df.to_csv(csv_path, index=False)
+    df.to_csv(csv_path, index=False)
 
     print("✅ ann_basis 已全部更新")
 
@@ -193,11 +189,13 @@ if __name__ == "__main__":
             duration_seconds=DURATION_DAY,
             data_length=TRADE_DAYS_HIS
         )
+
         sync_ic_discount(f'{current_dir}/ic_discount_his.csv', kline_df)
+        # 重新计算年化收益率
+        update_ann_basis(f'{current_dir}/ic_discount_his.csv')
     except Exception as e:
         logging.exception(f"❌ 更新过程中发生错误: {e}")
     finally:
         api.close()
         logging.info("🔌 天勤连接已关闭。")
 
-    update_ann_basis("ic_discount_his.csv")

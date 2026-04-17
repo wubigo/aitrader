@@ -98,10 +98,9 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
 
 
                     ann_basis = calc_annualized_basis(fut_close, idx_close, expire_rest_days)
-                    d = dt.date()
                     if ann_basis is not None:
                         records.append({
-                            "datetime": d,
+                            "datetime": dt,
                             "fut_close": round(fut_close, 2),
                             "idx_close": round(idx_close, 2),
                             "IC0": quote.underlying_symbol,

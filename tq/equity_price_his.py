@@ -177,8 +177,9 @@ if __name__ == "__main__":
     token = os.getenv("TQ_ID", "YOUR_TQ_TOKEN")
     pa = os.getenv("TQ_PASS", "YOUR_TQ_PASSWORD")
 
+    # 2015年4月16日至2018年1月，A股共有约665个交易日
     # 2018年1月1日到2026年4月11日，中国A股交易日数量约为1972天
-    TRADE_DAYS_HIS = 2000
+    TRADE_DAYS_HIS = 7
     # 初始化天勤API
     api = TqApi(auth=TqAuth(token, pa))
     try:

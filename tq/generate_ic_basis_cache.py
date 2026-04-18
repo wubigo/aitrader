@@ -42,8 +42,10 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
     logger.info(f"开始生成 {fut_symbol} (vs {idx_symbol}) 的年化贴水缓存...")
 
     if start is None and end is None:
+        # 2015年4月16日至2018年1月，A股共有约665个交易日
+        # 2018年1月1日到2026年4月11日，A股交易日数量约为1972天
         end_dt = date.today()
-        start_dt = end_dt - timedelta(days=2000)
+        start_dt = end_dt - timedelta(days=2700)
     else:
         start_dt = date.fromisoformat(start)
         end_dt = date.fromisoformat(end)

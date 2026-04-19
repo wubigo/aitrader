@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).resolve().parent
 CHUNK_SIZE = 5000
-HIS_DAYS = 4000
+HIS_DAYS = 3000
 
 
 def calc_annualized_basis(fut_price: float, spot_price: float, days: int) -> Optional[float]:

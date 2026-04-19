@@ -174,11 +174,14 @@ def get_basis_percentile(cache_file_name: str, current_ann_basis: Optional[float
 
     return stats
 
+
 def get_ic_annualized_basis_percentile(years=5, current_ann_basis=None):
     return get_basis_percentile("ic_discount_his.csv", years, current_ann_basis)
 
+
 def get_im_annualized_basis_percentile(years=5, current_ann_basis=None):
     return get_basis_percentile("im_discount_his.csv", years, current_ann_basis)
+
 
 if __name__ == "__main__":
     # 需要生成的列表

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).resolve().parent
 CHUNK_SIZE = 5000
+HIS_DAYS = 4000
 
 
 def calc_annualized_basis(fut_price: float, spot_price: float, days: int) -> Optional[float]:
@@ -41,14 +42,18 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
     cache_file = current_dir / cache_file_name
     logger.info(f"开始生成 {fut_symbol} (vs {idx_symbol}) 的年化贴水缓存...")
 
-    if start is None and end is None:
+    if end is not None:
+        end_dt = date.fromisoformat(end)
+    else:
+        end_dt = date.today()
+    if start is None:
         # 2015年4月16日至2018年1月，A股共有约665个交易日
         # 2018年1月1日到2026年4月11日，A股交易日数量约为1972天
-        end_dt = date.today()
-        start_dt = end_dt - timedelta(days=4010)
+        start_dt = end_dt - timedelta(days=HIS_DAYS)
     else:
         start_dt = date.fromisoformat(start)
-        end_dt = date.fromisoformat(end)
+
+
 
     logger.info(f"回测区间: {start_dt} ~ {end_dt}")
 
@@ -138,7 +143,7 @@ def is_colab():
     except ImportError:
         return False
 
-def get_basis_percentile(cache_file_name: str, years: int = 5, current_ann_basis: Optional[float] = None):
+def get_basis_percentile(cache_file_name: str, current_ann_basis: Optional[float] = None):
     """通用百分位计算函数"""
     cache_file = current_dir / cache_file_name
     if not cache_file.exists():
@@ -148,7 +153,7 @@ def get_basis_percentile(cache_file_name: str, years: int = 5, current_ann_basis
     df = pd.read_csv(cache_file)
     df["datetime"] = pd.to_datetime(df["datetime"])
 
-    cutoff = pd.Timestamp.today() - pd.Timedelta(days=years * 365 + 100)
+    cutoff = pd.Timestamp.today() - pd.Timedelta(days=HIS_DAYS)
     df = df[df["datetime"] >= cutoff]
 
     historical = df["ann_basis"].dropna()
@@ -162,8 +167,10 @@ def get_basis_percentile(cache_file_name: str, years: int = 5, current_ann_basis
         "current_percentile": None
     }
 
-    if current_ann_basis is not None:
-        stats["current_percentile"] = round((historical < current_ann_basis).mean() * 100, 2)
+    if current_ann_basis is None:
+        current_ann_basis = df["ann_basis"].iloc[-1]
+    logging.info(f"current_ann_basis:{current_ann_basis}")
+    stats["current_percentile"] = round((historical < current_ann_basis).mean() * 100, 2)
 
     return stats
 
@@ -181,9 +188,6 @@ if __name__ == "__main__":
 
     ]
 
-    # 获取环境变量控制的参数
-
-
     for task in tasks:
         # 如果文件已存在，可以选择跳过或重新生成（此处演示为重新生成/追加，根据逻辑逻辑建议先手动删除旧文件若需全新生成）
         # 为了安全，这里不自动删除，但在生产中通常先判断
@@ -193,6 +197,6 @@ if __name__ == "__main__":
             cache_file_name=task["file"]
         )
 
-        # 打印简单统计
-        stats = get_basis_percentile(task["file"])
-        logger.info(f"{task['fut']} 统计结果: {stats}")
+    # 打印简单统计
+    stats = get_basis_percentile(task["file"])
+    logger.info(f"{task['fut']} 统计结果: {stats}")

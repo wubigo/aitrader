@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).resolve().parent
 CHUNK_SIZE = 5000
-HIS_DAYS = 3000
+HIS_DAYS = 3400
 
 
 def calc_annualized_basis(fut_price: float, spot_price: float, days: int) -> Optional[float]:
@@ -82,7 +82,7 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
                 logger.info(f"时间: {quote.datetime} 【主力切换】{current_underlying or '开始'} → {new_underlying} ")
                 current_underlying = new_underlying
 
-            if api.is_changing(fut_klines):
+            if api.is_changing(fut_klines, "datetime"):
                 new_bars = fut_klines[fut_klines["datetime"] > last_dt]
 
                 for _, row in new_bars.iterrows():

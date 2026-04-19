@@ -65,8 +65,8 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
         auth=TqAuth(token, pa)
     )
 
-    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=1)
-    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=1)
+    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=500)
+    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=500)
     quote = api.get_quote(fut_symbol)
     current_underlying = quote.underlying_symbol
 
@@ -191,6 +191,7 @@ if __name__ == "__main__":
 
     ]
 
+    start_time = time.perf_counter()
     for task in tasks:
         # 如果文件已存在，可以选择跳过或重新生成（此处演示为重新生成/追加，根据逻辑逻辑建议先手动删除旧文件若需全新生成）
         # 为了安全，这里不自动删除，但在生产中通常先判断
@@ -203,3 +204,4 @@ if __name__ == "__main__":
     # 打印简单统计
     stats = get_basis_percentile(task["file"])
     logger.info(f"{task['fut']} 统计结果: {stats}")
+    logger.info(f"运行时长：{(time.perf_counter() - start_time) / 60:.2f} 分")

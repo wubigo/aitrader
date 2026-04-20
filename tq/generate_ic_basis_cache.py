@@ -87,7 +87,7 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
 
                 for _, row in new_bars.iterrows():
                     dt_nano = row["datetime"]
-                    dt = pd.to_datetime(dt_nano, unit='ns')
+                    dt = pd.to_datetime(dt_nano, unit='ns', utc=True).dt.tz_convert('Asia/Shanghai')
                     fut_close = row["close"]
 
                     idx_match = idx_klines[idx_klines["datetime"] == dt_nano]

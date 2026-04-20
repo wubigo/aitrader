@@ -69,7 +69,7 @@ try:
 
             # 5. 循环检查订单状态
 
-            df.to_csv(f"change-datetime-{i}.csv")
+            df.to_csv(f"change-close-{i}.csv")
 
             # print(kline_df.iloc[-2])  # 2018/01/01 09:00:00.000, O=35000, H=35400, L=34700, C=34900 9点这根小时线完成了
             # print(kline_df.iloc[-1])

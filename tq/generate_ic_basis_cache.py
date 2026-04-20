@@ -82,12 +82,12 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
                 logger.info(f"时间: {quote.datetime} 【主力切换】{current_underlying or '开始'} → {new_underlying} ")
                 current_underlying = new_underlying
 
-            if api.is_changing(fut_klines, "datetime"):
+            if api.is_changing(fut_klines):
                 new_bars = fut_klines[fut_klines["datetime"] > last_dt]
 
                 for _, row in new_bars.iterrows():
                     dt_nano = row["datetime"]
-                    dt = pd.to_datetime(dt_nano, unit='ns', utc=True).dt.tz_convert('Asia/Shanghai')
+                    dt = pd.to_datetime(dt_nano, unit='ns')
                     fut_close = row["close"]
 
                     idx_match = idx_klines[idx_klines["datetime"] == dt_nano]
@@ -184,12 +184,16 @@ def get_im_annualized_basis_percentile(years=5, current_ann_basis=None):
 
 
 if __name__ == "__main__":
+
+    data_file = f"{current_dir}/ic_discount_his.csv"
     # 需要生成的列表
     tasks = [
         # {"fut": "KQ.m@CFFEX.IM", "idx": "SSE.000852", "file": "im_discount_his.csv"},
-        {"fut": "KQ.m@CFFEX.IC", "idx": "SSE.000905", "file": "ic_discount_his.csv"},
+        {"fut": "KQ.m@CFFEX.IC", "idx": "SSE.000905", "file": data_file},
 
     ]
+    if os.path.exists(data_file):
+        os.rename(data_file, f"{data_file}-{date.today()}")
 
     start_time = time.perf_counter()
     for task in tasks:

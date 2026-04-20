@@ -23,17 +23,18 @@ pa = os.getenv("TQ_PASS")
 KLINE_LEN = 10000
 HIS_DAYS = 1000
 
-start_dt = date(2018, 1, 5)
-# end_dt = date(2026, 2, 1)
+start_dt = date(2026, 4, 20)
+# end_dt = date(2026, 4, 21)
 end_dt = date.today()
 # 1. 创建回测 API
 api = TqApi(
-    backtest=TqBacktest(start_dt=start_dt, end_dt=end_dt),
+    # backtest=TqBacktest(start_dt=start_dt, end_dt=end_dt),
     auth=TqAuth(token, pa)
 )
 
 
-kline_df = api.get_kline_serial(["KQ.m@CFFEX.IC", "SSE.000905"], duration_seconds=1800, data_length=KLINE_LEN)
+# kline_df = api.get_kline_serial(["KQ.m@CFFEX.IC", "SSE.000905"], duration_seconds=1800, data_length=KLINE_LEN)
+kline_df = api.get_kline_serial(["KQ.m@CFFEX.IC"], duration_seconds=1800, data_length=KLINE_LEN)
 
 # print(kline_df.iloc[-1])                         # 2018/01/01 09:00:00.000, O=35000, H=35000, L=35000, C=35000 小时线刚创建
 
@@ -64,12 +65,7 @@ try:
         if api.is_changing(kline_df.iloc[-1], "close"):
 
             logging.info(f"change-close-{n}.csv")
-            df = kline_df.copy()
-            df["datetime"] = pd.to_datetime(df["datetime"], unit='ns', utc=True).dt.tz_convert('Asia/Shanghai')
 
-            # 5. 循环检查订单状态
-
-            df.to_csv(f"change-close-{i}.csv")
 
             # print(kline_df.iloc[-2])  # 2018/01/01 09:00:00.000, O=35000, H=35400, L=34700, C=34900 9点这根小时线完成了
             # print(kline_df.iloc[-1])
@@ -87,14 +83,23 @@ try:
             # df["datetime"] = pd.to_datetime(df["datetime"], unit='ns', utc=True).dt.tz_convert('Asia/Shanghai')
             # df.to_csv(f"change-else-{e}.csv")
             print(f"else loop {e}")
-
             e = e + 1
+
+    logging.info(f"i={i}, n={n}, e={e}")
+    df = kline_df.copy()
+    df["datetime"] = pd.to_datetime(df["datetime"], unit='ns', utc=True).dt.tz_convert('Asia/Shanghai')
+
+    # 5. 循环检查订单状态
+
+    df.to_csv(f"change-close-{n}.csv")
 except BacktestFinished:
     logging.info("backtest exit")
 except Exception as e:
     print(f"出错: {e}")
 finally:
-    logging.info(f"i={i}, n={n}, e={e}")
+    print(f"end")
+    api.close()
 
-api.close()
+
+
 

@@ -65,8 +65,8 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
         auth=TqAuth(token, pa)
     )
 
-    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=500)
-    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=500)
+    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=2000)
+    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=2000)
     quote = api.get_quote(fut_symbol)
     current_underlying = quote.underlying_symbol
 
@@ -82,7 +82,7 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
                 logger.info(f"时间: {quote.datetime} 【主力切换】{current_underlying or '开始'} → {new_underlying} ")
                 current_underlying = new_underlying
 
-            if api.is_changing(fut_klines):
+            if api.is_changing(fut_klines.iloc[-1], "close"):
                 new_bars = fut_klines[fut_klines["datetime"] > last_dt]
 
                 for _, row in new_bars.iterrows():

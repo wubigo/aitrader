@@ -1,0 +1,280 @@
+import logging
+import os
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import List, Dict, Optional, Set, Any
+from pathlib import Path
+
+import pandas as pd
+import numpy as np
+
+# --- Setup Logging ---
+# Assuming these exist in the environment as per ic_roller_backtest.py
+from utils.logging_config import setup_logging
+from utils.ic_net_short_ratio import run_single
+from tq.generate_ic_basis_cache import get_ic_annualized_basis_percentile
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+@dataclass
+class StrategyConfig:
+    """Strategy configuration parameters."""
+    futures_symbol: str = "KQ.m@CFFEX.IC"
+    index_symbol: str = "SSE.000905"
+    duration_minutes: int = 90
+    initial_balance: float = 1_000_000.0
+
+    # Entry/Exit Thresholds
+    annualized_basis_threshold: float = 8.0
+    min_days_to_expiry_open: int = 7
+    max_days_to_expiry_close: int = 6
+    profit_taking_basis_pct: float = 0.5
+
+    # Advanced Filters
+    index_sma_period: int = 20
+    volatility_window: int = 20
+    target_volatility: float = 0.15
+    default_trade_volume: int = 1
+
+    # Backtest Period (Will be overridden by data range)
+    start_dt: date = date(2018, 1, 1)
+    end_dt: date = date(2023, 1, 1)
+
+    @property
+    def csv_file(self) -> str:
+        return f"IC_local_results_{self.start_dt}_{self.end_dt}.csv"
+
+class PerformanceAnalyzer:
+    """Helper class to calculate and log strategy performance."""
+
+    @staticmethod
+    def calculate_metrics(df: pd.DataFrame, config: StrategyConfig, initial_balance: float):
+        if df.empty or "balance" not in df.columns:
+            logger.info("No balance data available for performance analysis.")
+            return
+
+        df["datetime"] = pd.to_datetime(df["datetime"])
+        final_balance = df["balance"].iloc[-1]
+
+        # 1. CAGR
+        start_date = df["datetime"].iloc[0].date()
+        end_date = df["datetime"].iloc[-1].date()
+        days = (end_date - start_date).days
+        cagr = (final_balance / initial_balance) ** (365.0 / max(days, 1)) - 1
+
+        # 2. Max Drawdown
+        df["cum_max_balance"] = df["balance"].cummax()
+        df["drawdown"] = (df["balance"] - df["cum_max_balance"]) / df["cum_max_balance"]
+        max_drawdown = df["drawdown"].min()
+
+        # 3. Sharpe Ratio
+        returns = df["balance"].pct_change().dropna()
+        sharpe = (returns.mean() / returns.std() * (242 ** 0.5)) if returns.std() > 0 else 0
+
+        logger.info("📈 【本地回测绩效评估】")
+        logger.info(f"   起始日期: {start_date} | 结束日期: {end_date}")
+        logger.info(f"   起始资金: {initial_balance:,.2f}")
+        logger.info(f"   最终资金: {final_balance:,.2f}")
+        logger.info(f"   年化收益率 (CAGR): {cagr:.2%}")
+        logger.info(f"   最大回撤 (Max Drawdown): {max_drawdown:.2%}")
+        logger.info(f"   夏普比率 (Sharpe Ratio): {sharpe:.2f}")
+
+        # 4. Period Analysis
+        PerformanceAnalyzer._log_period_returns(df)
+
+    @staticmethod
+    def _log_period_returns(df: pd.DataFrame):
+        df['year'] = df['datetime'].dt.year
+        df['half_year'] = df['datetime'].dt.month.apply(lambda x: 1 if x <= 6 else 2)
+
+        yearly = df.groupby('year')['balance'].agg(['first', 'last'])
+        logger.info("📅 【年度收益分析】")
+        for year, row in yearly.iterrows():
+            logger.info(f"   {year}年度: {(row['last'] / row['first'] - 1):.2%}")
+
+class LocalICBasisRollerStrategy:
+    """Strategy implementation using local K-line data."""
+
+    def __init__(self, config: StrategyConfig):
+        self.cfg = config
+        self.current_dir = Path(__file__).resolve().parent
+
+        # State Variables
+        self.balance = self.cfg.initial_balance
+        self.pos_long = 0
+        self.entry_price = 0.0
+        self.entry_ann_basis = None
+        self.has_opened_in_current_main = False
+        self.last_symbol = None
+
+        # Windows
+        self.vol_window = deque(maxlen=self.cfg.volatility_window)
+        self.results_data = []
+
+    def _calc_annualized_basis(self, fut_price: float, spot_price: float, days: int) -> Optional[float]:
+        if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0 or spot_price <= 0:
+            return None
+        basis_ratio = (spot_price - fut_price) / spot_price
+        return round(basis_ratio * 365 / days * 100, 3)
+
+    def _get_vol_adjusted_volume(self) -> int:
+        if len(self.vol_window) >= self.cfg.volatility_window:
+            returns = pd.Series(list(self.vol_window)).pct_change().dropna()
+            ann_vol = returns.std() * (242 ** 0.5)
+            if ann_vol > 0:
+                return max(1, int(self.cfg.default_trade_volume * (self.cfg.target_volatility / max(0.01, ann_vol))))
+        return self.cfg.default_trade_volume
+
+    def load_data(self):
+        data_file = self.current_dir / f"IC0-{self.cfg.duration_minutes}分钟-K线.csv"
+        expire_file = self.current_dir / "future_expires.csv"
+
+        if not data_file.exists():
+            raise FileNotFoundError(f"Data file not found: {data_file}")
+        if not expire_file.exists():
+            raise FileNotFoundError(f"Expire file not found: {expire_file}")
+
+        # Load K-lines
+        df = pd.read_csv(data_file)
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        # Drop rows where main info is missing
+        df = df.dropna(subset=['close', 'close1'])
+
+        # Load Expire info
+        expire_df = pd.read_csv(expire_file)
+        expire_df['datetime'] = pd.to_datetime(expire_df['datetime'])
+
+        # Extract date for merge
+        df['date_str'] = df['datetime'].dt.strftime('%Y-%m-%d')
+        expire_df['date_str'] = expire_df['datetime'].dt.strftime('%Y-%m-%d')
+
+        # Merge
+        expire_df = expire_df[['date_str', 'expire_rest_days', 'KQ.m@CFFEX.IC']]
+        merged = pd.merge(df, expire_df, on='date_str', how='left')
+
+        return merged.sort_values('datetime')
+
+    def run(self):
+        df = self.load_data()
+        logger.info(f"Loaded {len(df)} records for backtest.")
+
+        # Pre-calculate SMA for efficiency
+        df['index_sma'] = df['close1'].rolling(window=self.cfg.index_sma_period).mean()
+
+        for i, row in df.iterrows():
+            test_time = row['datetime']
+            fut_close = row['close']
+            idx_close = row['close1']
+            expire_days = row['expire_rest_days']
+            index_sma = row['index_sma']
+            symbol = row['KQ.m@CFFEX.IC']
+
+            # 1. Handle Main Switch
+            if symbol != self.last_symbol:
+                if self.last_symbol is not None:
+                    logger.info(f"【主力切换】{self.last_symbol} → {symbol} | 时间: {test_time}")
+                    # If we have a position, we should roll it or close it?
+                    # The Tq strategy closes and sets has_opened_in_current_main = False
+                    if self.pos_long > 0:
+                        logger.info(f"⏰【换月平仓】合约: {self.last_symbol}")
+                        self._close_position(fut_close, test_time)
+
+                self.last_symbol = symbol
+                self.has_opened_in_current_main = False
+
+            # 2. Calculate Features
+            ann_basis = self._calc_annualized_basis(fut_close, idx_close, expire_days)
+            logger.info(f"{test_time}: {ann_basis}")
+            # Dynamic Threshold (Percentile)
+            stats = get_ic_annualized_basis_percentile(current_ann_basis=ann_basis) if ann_basis is not None else {"current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
+            basis_percentile = stats.get("current_percentile", 50)
+            dynamic_threshold = stats.get("p75", self.cfg.annualized_basis_threshold)
+
+            # 3. Strategy Logic
+            self._evaluate_and_execute(
+                ann_basis, dynamic_threshold, expire_days,
+                test_time, idx_close, fut_close, index_sma, basis_percentile
+            )
+
+            # 4. Record Data
+            self.results_data.append({
+                "datetime": test_time,
+                "close": fut_close,
+                "index_close": idx_close,
+                "ann_basis": ann_basis,
+                "basis_percentile": basis_percentile,
+                "balance": self.balance + (self.pos_long * (fut_close - self.entry_price) * 200 if self.pos_long > 0 else 0),
+                "pos_long": self.pos_long,
+                "symbol": symbol
+            })
+
+            # Update volatility window
+            if idx_close > 0:
+                self.vol_window.append(idx_close)
+
+        # Summary
+        results_df = pd.DataFrame(self.results_data)
+        # Update balance to reflect final close (if still holding)
+        if self.pos_long > 0:
+             final_fut_close = df.iloc[-1]['close']
+             self._close_position(final_fut_close, df.iloc[-1]['datetime'])
+             results_df.iloc[-1, results_df.columns.get_loc('balance')] = self.balance
+
+        PerformanceAnalyzer.calculate_metrics(results_df, self.cfg, self.cfg.initial_balance)
+
+        output_file = self.current_dir / self.cfg.csv_file
+        results_df.to_csv(output_file, index=False)
+        logger.info(f"Results saved to {output_file}")
+
+    def _evaluate_and_execute(self, ann_basis, threshold, expire_days,
+                              test_time, idx_close, fut_close, index_sma, basis_perc):
+
+        # Note: run_single might be slow for every bar. In ic_roller_backtest, it's called every bar.
+        # However, it returns short_ratio. Let's assume it's available.
+        # We'll skip it if it fails or returns None to match ic_roller_backtest behavior (where it just logs)
+
+        # 1. Entry Logic
+        if (ann_basis is not None and ann_basis > threshold and
+            expire_days > self.cfg.min_days_to_expiry_open and
+            self.pos_long == 0 and
+            idx_close > index_sma and not self.has_opened_in_current_main):
+
+            vol = self._get_vol_adjusted_volume()
+            logger.info(f"🚨【贴水报警】合约: {self.last_symbol} 时间: {test_time} | 年化贴水: {ann_basis:.2f}% | 动态阈值: {threshold:.2f}")
+            self._open_position(fut_close, vol, ann_basis, test_time)
+            self.has_opened_in_current_main = True
+
+        # 2. Profit Taking
+        elif self.pos_long > 0 and self.entry_ann_basis is not None:
+            repair_pct = (self.entry_ann_basis - ann_basis) / self.entry_ann_basis if self.entry_ann_basis != 0 else 0
+            if repair_pct >= self.cfg.profit_taking_basis_pct:
+                logger.info(f"💰【止盈平仓】合约: {self.last_symbol} 修复率: {repair_pct:.2%}")
+                self._close_position(fut_close, test_time)
+
+        # 3. Expiry Close
+        elif expire_days <= self.cfg.max_days_to_expiry_close and self.pos_long > 0:
+            logger.info(f"⏰【临期平仓】合约: {self.last_symbol} 剩余天数: {expire_days}")
+            self._close_position(fut_close, test_time)
+
+    def _open_position(self, price, volume, ann_basis, dt):
+        self.pos_long = volume
+        self.entry_price = price
+        self.entry_ann_basis = ann_basis
+        logger.info(f"✅ 【买入开仓】价格: {price}, 数量: {volume}, 时间: {dt}")
+
+    def _close_position(self, price, dt):
+        # Calculate PnL (multiplier for IC is 200)
+        pnl = (price - self.entry_price) * self.pos_long * 200
+        self.balance += pnl
+        logger.info(f"❌ 【卖出平仓】价格: {price}, 数量: {self.pos_long}, PnL: {pnl:.2f}, 时间: {dt}")
+        self.pos_long = 0
+        self.entry_price = 0.0
+        self.entry_ann_basis = None
+
+if __name__ == "__main__":
+    config = StrategyConfig()
+    strategy = LocalICBasisRollerStrategy(config)
+    strategy.run()

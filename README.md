@@ -247,4 +247,15 @@ Exception: 与 wss://backtest.shinnytech.com/t/nfmd/front/mobile 的连接失败
 ## 期货
 
 ### AKSHARE
-1. CFFEX 数据源开始日期为 20100416
+1. CFFEX ICO持仓数据开始日期为 20100416
+2. query_his_cont_quotes接口返回的最早的IC0记录为:2015-04-16,CFFEX.IC1505
+
+
+规则2: K线序列 (例如上面例子中的ka1, ka2) 总是按周期推进. 每根K线在创建时和结束时各更新一次:
+```
+ka2 = api.get_kline_serial("SHFE.cu1901", 3600) # 请求小时线
+print(ka2.iloc[-1])                         # 2018/01/01 09:00:00.000, O=35000, H=35000, L=35000, C=35000 小时线刚创建
+api.wait_update()                           # 推进1小时, 前面一个小时线结束, 新开一根小时线
+print(ka2.iloc[-2])                         # 2018/01/01 09:00:00.000, O=35000, H=35400, L=34700, C=34900 9点这根小时线完成了
+print(ka2.iloc[-1])                         # 2018/01/01 10:00:00.000, O=34900, H=34900, L=34900, C=34900 10
+```

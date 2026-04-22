@@ -194,7 +194,7 @@ def fetch_cffex_positions(symbol: str = ["IC"], trade_date: str = None) -> pd.Da
                 continue
         raise RuntimeError("近7日均无法获取数据，请检查网络或手动指定日期")
     else:
-        raw = ak.get_cffex_rank_table(date=trade_date, symbol=symbol)
+        raw = ak.get_cffex_rank_table(date=trade_date, vars_list=symbol_list)
         df = _normalize_columns(raw)
         df.attrs["trade_date"] = trade_date
         df.attrs["symbol"] = symbol

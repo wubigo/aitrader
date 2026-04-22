@@ -19,6 +19,18 @@ from utils.ic_net_short_ratio import run_single
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
+URATION_MINUTES = 60+30+30
+HIS_DAYS = 1000
+
+current_dir = Path(__file__).resolve().parent
+
+data_file = f"{current_dir}/IC0-{DURATION_MINUTES}分钟-K线.csv"
+
+if not os.path.exists(data_file):
+    logger.error(f"历史K线数据文件不存在{data_file}-{date.today()}")
+    exit()
+
 @dataclass
 class StrategyConfig:
     """Strategy configuration parameters."""
@@ -151,10 +163,7 @@ class ICBasisRollerStrategy:
             self.cfg.futures_symbol, self.cfg.duration,
             data_length=self.cfg.data_length, fill_min_period=0
         )
-        self.index_klines = self.api.get_kline_serial(
-            self.cfg.index_symbol, self.cfg.duration,
-            data_length=self.cfg.data_length, fill_min_period=0
-        )
+
         self.quote_main = self.api.get_quote(self.cfg.futures_symbol)
 
     def _calc_annualized_basis(self, fut_price: float, spot_price: float, days: int) -> Optional[float]:
@@ -201,59 +210,18 @@ class ICBasisRollerStrategy:
         return self.cfg.default_trade_volume
 
     def _process_new_bars(self):
-        if not self.api.is_changing(self.futures_klines):
+        if not self.api.is_changing(self.futures_klines.iloc[-1], "datetime"):
+            return
+        df = self.futures_klines[["datetime"]].iloc[[-1]]
+        if not df.empty:
+            df["datetime"] = pd.to_datetime(df["datetime"], unit='ns', utc=True).dt.tz_convert('Asia/Shanghai')
+        else:
             return
 
         new_bars = self.futures_klines[
             (self.futures_klines["datetime"] > self.last_bar_dt) &
             (self.futures_klines["datetime"] >= self.cfg.start_nano)
-        ]
-
-        for _, row in new_bars.iterrows():
-            fut_dt, fut_close = row["datetime"], row["close"]
-            idx_match = self.index_klines[self.index_klines["datetime"] == fut_dt]
-
-            if idx_match.empty:
-                self.full_klines_data.append(row.to_dict())
-                continue
-
-            idx_close = idx_match.iloc[0]["close"]
-            test_time = pd.to_datetime(fut_dt, unit='ns')
-
-            # Feature calculation
-            discount_bp = round(((idx_close - fut_close) / idx_close) * 10000, 2) if idx_close > 0 else 0
-            quote = self.api.get_quote(self.cfg.futures_symbol)
-            expire_days = quote.underlying_quote.expire_rest_days
-            position = self.api.get_position(self.current_underlying)
-            ann_basis = self._calc_annualized_basis(fut_close, idx_close, expire_days)
-
-            # Indicators
-            index_sma = self.index_klines["close"].rolling(window=self.cfg.index_sma_period).mean().iloc[-1]
-            stats = get_ic_annualized_basis_percentile(5, ann_basis) if ann_basis else {"current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
-            basis_percentile = stats["current_percentile"]
-            dynamic_threshold = stats["p75"]
-
-            self._evaluate_and_execute(
-                ann_basis, dynamic_threshold, expire_days, position,
-                test_time, idx_close, fut_close, index_sma, basis_percentile
-            )
-
-            # Record Data
-            row_dict = {
-                **row.to_dict(),
-                "index_close": idx_close, "discount_bp": discount_bp,
-                "ann_basis": ann_basis, "basis_percentile": basis_percentile,
-                "balance": self.api.get_account().balance
-            }
-            self.full_klines_data.append(row_dict)
-
-            # Update Windows
-            if ann_basis is not None: self.basis_window.append(ann_basis)
-            if idx_close > 0: self.vol_window.append(idx_close)
-
-            if len(self.full_klines_data) >= self.cfg.chunk_size:
-                self._flush_data_to_disk()
-
+            ]
         if not new_bars.empty:
             self.last_bar_dt = self.futures_klines.iloc[-1]["datetime"]
 

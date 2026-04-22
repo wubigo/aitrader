@@ -170,7 +170,7 @@ def get_basis_percentile(cache_file_name: str, current_ann_basis: Optional[float
 
     if current_ann_basis is None:
         current_ann_basis = df["ann_basis"].iloc[-1]
-    logging.info(f"current_ann_basis:{current_ann_basis}")
+
     stats["current_percentile"] = round((historical < current_ann_basis).mean() * 100, 2)
 
     return stats

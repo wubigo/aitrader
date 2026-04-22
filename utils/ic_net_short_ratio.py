@@ -443,13 +443,13 @@ def save_report_to_csv(result_dict, file_path="ic_report_history.csv"):
     if Path(file_path).exists():
         old_df = pd.read_csv(file_path)
         # 确保 trade_date 是字符串格式以便比较
-        old_df['trade_date'] = old_df['trade_date'].astype(str)
-        new_df['trade_date'] = new_df['trade_date'].astype(str)
+        old_df['date'] = old_df['date'].astype(str)
+        new_df['date'] = new_df['date'].astype(str)
 
         # 检查日期是否已存在
-        if result_dict['trade_date'] in old_df['trade_date'].values:
+        if result_dict['date'] in old_df['date'].values:
             # 删除旧记录并合并新记录
-            old_df = old_df[old_df['trade_date'] != result_dict['trade_date']]
+            old_df = old_df[old_df['date'] != result_dict['date']]
             combined_df = pd.concat([old_df, new_df], ignore_index=True)
         else:
             # 直接追加
@@ -458,7 +458,7 @@ def save_report_to_csv(result_dict, file_path="ic_report_history.csv"):
         combined_df = new_df
 
     # 按日期排序后保存
-    combined_df.sort_values("trade_date", inplace=True)
+    combined_df.sort_values("date", inplace=True)
     combined_df.to_csv(file_path, index=False, encoding='utf-8-sig')
     print(f"已更新数据至: {file_path}")
 
@@ -516,23 +516,27 @@ def main():
                 result = calc_net_short_ratio(trade_info)
 
                 # 补充结果维度
-                result['trade_date'] = trade_date
+                result['date'] = trade_date
                 result['symbol'] = main_symbol
                 level, desc = interpret_signal(result["net_short_ratio"])
                 result['signal_level'] = level
                 results_data.append(result)
                 # 3. 打印并保存
                 print_report(result, trade_info, trade_date, main_symbol)
-                results_df = pd.DataFrame(results_data)
-                print_history_trend(results_df, main_symbol)
-                save_report_to_csv(result, file_path=report_file)
 
                 # 更新内存中的已存在日期集合，防止 records 中有重复日期
                 existing_dates.add(trade_date)
 
             except Exception as e:
-                print(f"获取 {trade_date} 数据失败: {e}")
+                logger.exception(f"获取 {trade_date} 数据失败: {e}")
                 continue  # 单次失败不影响整个循环
+
+        if len(results_data) > 0:
+            results_df = pd.DataFrame(results_data)
+            print_history_trend(results_df, main_symbol)
+            save_report_to_csv(results_df, file_path=report_file)
+        else:
+            logger.info("no data")
 
     except Exception as e:
         logging.exception(f"\n运行过程中出现严重错误：{e}")

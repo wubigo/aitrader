@@ -470,7 +470,7 @@ def main():
     print("─" * 40)
     symbol = "IC"
     symbol_list = [symbol]
-    report_file = "ic_net_short_records.csv"
+    report_file = f"{current_dir}ic_net_short_records.csv"
 
     try:
         # 1. 加载任务清单
@@ -523,7 +523,7 @@ def main():
                 results_data.append(result)
                 # 3. 打印并保存
                 print_report(result, trade_info, trade_date, main_symbol)
-
+                # save_report_to_csv(result, file_path=report_file)
                 # 更新内存中的已存在日期集合，防止 records 中有重复日期
                 existing_dates.add(trade_date)
 
@@ -534,7 +534,7 @@ def main():
         if len(results_data) > 0:
             results_df = pd.DataFrame(results_data)
             print_history_trend(results_df, main_symbol)
-            save_report_to_csv(results_df, file_path=report_file)
+            results_df.to_csv(report_file)
         else:
             logger.info("no data")
 

@@ -489,6 +489,7 @@ def main():
             except Exception as e:
                 print(f"读取历史记录文件失败，将重新爬取: {e}")
 
+        results_data = []
         for row in records:
             trade_date = str(row['date'])
             main_symbol = row['KQ.m@CFFEX.IC']
@@ -519,9 +520,11 @@ def main():
                 result['symbol'] = main_symbol
                 level, desc = interpret_signal(result["net_short_ratio"])
                 result['signal_level'] = level
-
+                results_data.append(result)
                 # 3. 打印并保存
                 print_report(result, trade_info, trade_date, main_symbol)
+                results_df = pd.DataFrame(results_data)
+                print_history_trend(results_df, main_symbol)
                 save_report_to_csv(result, file_path=report_file)
 
                 # 更新内存中的已存在日期集合，防止 records 中有重复日期

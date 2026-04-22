@@ -230,7 +230,7 @@ class ICBasisRollerStrategy:
 
             # Indicators
             index_sma = self.index_klines["close"].rolling(window=self.cfg.index_sma_period).mean().iloc[-1]
-            stats = get_ic_annualized_basis_percentile(5, ann_basis) if ann_basis else {"current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
+            stats = get_ic_annualized_basis_percentile(current_ann_basis=ann_basis) if ann_basis else {"current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
             basis_percentile = stats["current_percentile"]
             dynamic_threshold = stats["p75"]
 

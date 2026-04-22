@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).resolve().parent
 CHUNK_SIZE = 5000
-HIS_DAYS = 3400
+KLINE_LEN = 5000
+HIS_DAYS = 34
 
 
 def calc_annualized_basis(fut_price: float, spot_price: float, days: int) -> Optional[float]:
@@ -65,8 +66,8 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
         auth=TqAuth(token, pa)
     )
 
-    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=2000)
-    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=2000)
+    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=KLINE_LEN)
+    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=KLINE_LEN)
     quote = api.get_quote(fut_symbol)
     current_underlying = quote.underlying_symbol
 
@@ -175,8 +176,8 @@ def get_basis_percentile(cache_file_name: str, current_ann_basis: Optional[float
     return stats
 
 
-def get_ic_annualized_basis_percentile(years=5, current_ann_basis=None):
-    return get_basis_percentile("ic_discount_his.csv", years, current_ann_basis)
+def get_ic_annualized_basis_percentile(current_ann_basis=None):
+    return get_basis_percentile("ic_discount_his.csv", current_ann_basis)
 
 
 def get_im_annualized_basis_percentile(years=5, current_ann_basis=None):

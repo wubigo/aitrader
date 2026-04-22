@@ -201,7 +201,7 @@ class ICBasisRollerStrategy:
         return self.cfg.default_trade_volume
 
     def _process_new_bars(self):
-        //订阅收盘价更新通知
+        # 订阅收盘价更新通知
         if not self.api.is_changing(self.futures_klines.iloc[-1], "close"):
             return
 

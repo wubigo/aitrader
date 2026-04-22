@@ -386,7 +386,7 @@ def run_single_from_cache(symbol: str = "IC", trade_date: str = None) -> dict:
         search_date = f"{search_date[:4]}-{search_date[4:6]}-{search_date[6:]}"
 
     # 过滤数据
-    match = cache_df[(cache_df['trade_date'].astype(str) == search_date) &
+    match = cache_df[(cache_df['date'].astype(str) == search_date) &
                      (cache_df['symbol'].str.contains(symbol))]
 
     if match.empty:

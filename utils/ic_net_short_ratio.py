@@ -162,43 +162,32 @@ def fetch_cffex_positions(symbol: str = ["IC"], trade_date: str = None) -> pd.Da
 
     返回标准化 DataFrame（含 member、long_vol、short_vol 列）
     """
-    if not AKSHARE_OK:
-        raise ImportError("请先安装 akshare：pip install akshare")
+    if trade_date is None:
+        trade_date = datetime.today().strftime("%Y%m%d")
 
     symbol_list = [symbol]
-    if trade_date is None:
-        for delta in range(7):
-            d = (datetime.today() - timedelta(days=delta)).strftime("%Y%m%d")
-            try:
-                raw = ak.get_cffex_rank_table(date=d, vars_list=symbol_list)
-                if not raw:
-                    logger.info(f"{d} no data")
-                else:
-                    # 动态寻找匹配 symbol 的 key (例如 'IC2606' 包含 'IC')
-                    df_raw = None
-                    for key in raw.keys():
-                        if symbol in key:
-                            df_raw = raw[key]
-                            break
 
-                    if df_raw is None:
-                        logger.warning(f"Found keys {list(raw.keys())} but none match {symbol}")
-                        continue
-
-                    df = _normalize_columns(df_raw)
-                    df.attrs["trade_date"] = d
-                    df.attrs["symbol"] = symbol
-                    return df
-            except Exception:
-                logger.exception("fetch_cffex_positions")
-                continue
-        raise RuntimeError("近7日均无法获取数据，请检查网络或手动指定日期")
-    else:
+    try:
         raw = ak.get_cffex_rank_table(date=trade_date, vars_list=symbol_list)
-        df = _normalize_columns(raw)
-        df.attrs["trade_date"] = trade_date
-        df.attrs["symbol"] = symbol
-        return df
+        if not raw:
+            logger.info(f"{d} no data")
+        else:
+            # 动态寻找匹配 symbol 的 key (例如 'IC2606' 包含 'IC')
+            df_raw = None
+            for key in raw.keys():
+                if symbol in key:
+                    df_raw = raw[key]
+
+            if df_raw is None:
+                logger.warning(f"Found keys {list(raw.keys())} but none match {symbol}")
+                return pd.DataFrame(columns=["date", "symbol"])
+
+            df = _normalize_columns(df_raw)
+            df.attrs["date"] = d
+            df.attrs["symbol"] = symbol
+            return df
+    except Exception:
+        logger.exception(f"fetch_cffex_positions error")
 
 
 # ─── 历史趋势分析 ──────────────────────────────────────────────
@@ -425,8 +414,11 @@ def run_single(symbol: str = "IC", trade_date: str = None) -> dict:
     if result:
         return result
     df = fetch_cffex_positions(symbol=symbol, trade_date=trade_date)
+    if df is None or df.empty:
+        return None
+
     result = calc_net_short_ratio(df)
-    result["trade_date"] = df.attrs.get("trade_date")
+    result["date"] = df.attrs.get("date")
     result["symbol"] = symbol
     level, desc = interpret_signal(result["net_short_ratio"])
     result["signal_level"] = level
@@ -545,4 +537,5 @@ def main():
 
 
 if __name__ == "__main__":
+    t = run_single()
     main()

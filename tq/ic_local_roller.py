@@ -167,7 +167,7 @@ class LocalICBasisRollerStrategy:
         return self.cfg.default_trade_volume
 
     def load_data(self):
-        data_file = self.current_dir / f"IC0-{self.cfg.duration_minutes}分钟-K线.csv"
+        data_file = self.current_dir / f"IC0-日-K线.csv"
         expire_file = self.current_dir / "future_expires.csv"
 
         if not data_file.exists():
@@ -230,13 +230,14 @@ class LocalICBasisRollerStrategy:
             # Dynamic Threshold (Percentile)
             stats = get_ic_annualized_basis_percentile(current_ann_basis=ann_basis) if ann_basis is not None else {
                 "current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
-            basis_percentile = stats.get("current_percentile", 50)
+            basis_perc = stats.get("current_percentile", 50)
             dynamic_threshold = stats.get("p75", self.cfg.annualized_basis_threshold)
+            position = self.api.get_position(symbol)
 
             # 3. Strategy Logic
             self._evaluate_and_execute(
-                ann_basis, dynamic_threshold, expire_days,
-                test_time, idx_close, fut_close, index_sma, basis_percentile
+                ann_basis, dynamic_threshold, expire_days, position,
+                test_time, idx_close, fut_close, index_sma, basis_perc
             )
 
             # 4. Record Data
@@ -245,7 +246,7 @@ class LocalICBasisRollerStrategy:
                 "close": fut_close,
                 "index_close": idx_close,
                 "ann_basis": ann_basis,
-                "basis_percentile": basis_percentile,
+                "basis_percentile": basis_perc,
                 "balance": self.balance + (
                     self.pos_long * (fut_close - self.entry_price) * 200 if self.pos_long > 0 else 0),
                 "pos_long": self.pos_long,
@@ -286,17 +287,6 @@ class LocalICBasisRollerStrategy:
             logger.info(f"运行时长：{(time.perf_counter() - start_time) / 60:.2f} 分")
             if self.api:
                 self.api.close()
-
-
-
-
-
-
-
-
-
-
-
 
 
     def _evaluate_and_execute(self, ann_basis, threshold, expire_days, position,

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import List, Dict, Optional, Set, Any
 from pathlib import Path
+from requests import ConnectTimeout
 
 import pandas as pd
 import numpy as np

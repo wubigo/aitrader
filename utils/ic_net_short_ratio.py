@@ -464,7 +464,7 @@ def main():
     print("─" * 40)
     symbol = "IC"
     symbol_list = [symbol]
-    report_file = f"{current_dir}ic_net_short_records.csv"
+    report_file = f"{current_dir}/ic_net_short_records.csv"
 
     try:
         # 1. 加载任务清单

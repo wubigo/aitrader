@@ -261,9 +261,9 @@ class ICBasisRollerStrategy:
     def _evaluate_and_execute(self, ann_basis, threshold, expire_days, position,
                               test_time, idx_close, fut_close, index_sma, basis_perc):
 
-        short_ratio = run_single(trade_date=test_time.strftime('%Y-%m-%d'))
+        short_ratio = run_single(date=test_time.strftime('%Y-%m-%d'))
         if short_ratio is None or not short_ratio:
-            logger.info("日期当天{test_time}净空比 不存在")
+            logger.info("{test_time}日期当天净空比不存在")
         # 1. Entry Logic
         if (ann_basis is not None and ann_basis > threshold and
             expire_days > self.cfg.min_days_to_expiry_open and

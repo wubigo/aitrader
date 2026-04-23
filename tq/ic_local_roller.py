@@ -121,6 +121,7 @@ class LocalICBasisRollerStrategy:
         self.has_opened_in_current_main = False
         self.last_symbol = None
         self.trades = None
+        self.processed_trade_ids: Set[str] = set()
 
         # Windows
         self.vol_window = deque(maxlen=self.cfg.volatility_window)

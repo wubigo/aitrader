@@ -198,7 +198,7 @@ class LocalICBasisRollerStrategy:
     def _process_new_bars(self, df: DataFrame):
         if self.api.is_changing(self.futures_klines.iloc[-1], "datetime"):
             latest = pd.to_datetime(self.futures_klines.iloc[-1]["datetime"], unit='ns', utc=True).tz_convert('Asia/Shanghai')
-            kline = df[df['datetime'] == latest].to_dict()
+            kline = df[df['datetime'] == latest].iloc[0]
             test_time = kline['datetime']
             fut_close = kline['close']
             idx_close = kline['close1']

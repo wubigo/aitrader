@@ -168,9 +168,9 @@ class ICBasisRollerStrategy:
         for trade_id, trade in trades.items():
             trade_symbol = f"{trade.exchange_id}.{trade.instrument_id}"
             if trade_symbol == self.current_underlying and trade_id not in self.processed_trade_ids:
-                trade_time = datetime.fromtimestamp(trade.trade_date_time / 1e9)
+                trade_time = pd.to_datetime(trade.trade_date_time, unit='ns', utc=True).tz_convert('Asia/Shanghai')
                 logger.info(f"--- 交易成功通知 ---")
-                logger.info(f"Trade时间:{trade_time.strftime('%Y-%m-%d %H:%M:%S.%f')}, 价格:{trade.price}, 数量:{trade.volume}, 方向:{trade.direction}")
+                logger.info(f"Trade时间:{trade_time}, 价格:{trade.price}, 数量:{trade.volume}, 方向:{trade.direction}")
                 self.processed_trade_ids.add(trade_id)
 
     def _handle_main_switch(self):

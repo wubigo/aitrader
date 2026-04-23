@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
+from pandas import DataFrame
+from tqsdk import TqApi, TqSim, TqBacktest, TqAuth, BacktestFinished
 
 # --- Setup Logging ---
 # Assuming these exist in the environment as per ic_roller_backtest.py
@@ -24,7 +26,9 @@ class StrategyConfig:
     """Strategy configuration parameters."""
     futures_symbol: str = "KQ.m@CFFEX.IC"
     index_symbol: str = "SSE.000905"
+    duration: int = 60 * 60 * 24  # Daily K-line
     duration_minutes: int = 90
+    data_length: int = 10000
     initial_balance: float = 1_000_000.0
 
     # Entry/Exit Thresholds
@@ -99,7 +103,12 @@ class LocalICBasisRollerStrategy:
     """Strategy implementation using local K-line data."""
 
     def __init__(self, config: StrategyConfig):
+
         self.cfg = config
+        self.api: Optional[TqApi] = None
+        self.sim_account = TqSim(init_balance=self.cfg.initial_balance, account_id='bigo')
+        self.target_pos_task: Optional[TargetPosTask] = None
+
         self.current_dir = Path(__file__).resolve().parent
 
         # State Variables
@@ -109,10 +118,39 @@ class LocalICBasisRollerStrategy:
         self.entry_ann_basis = None
         self.has_opened_in_current_main = False
         self.last_symbol = None
+        self.trades = None
 
         # Windows
         self.vol_window = deque(maxlen=self.cfg.volatility_window)
         self.results_data = []
+
+    def _init_api(self):
+        token = os.getenv("TQ_ID")
+        pa = os.getenv("TQ_PASS")
+        self.api = TqApi(
+            backtest=TqBacktest(start_dt=self.cfg.start_dt, end_dt=self.cfg.end_dt),
+            account=self.sim_account,
+            auth=TqAuth(token, pa)
+        )
+
+        self.trades = self.api.get_trade()
+
+        self.futures_klines = self.api.get_kline_serial(
+            self.cfg.futures_symbol, self.cfg.duration,
+            data_length=self.cfg.data_length, fill_min_period=0
+        )
+
+
+    def _handle_trades(self):
+        if self.api.is_changing(self.trades):
+            trades = self.api.get_trade()
+            for trade_id, trade in trades.items():
+                trade_symbol = f"{trade.exchange_id}.{trade.instrument_id}"
+                if trade_symbol == self.current_underlying and trade_id not in self.processed_trade_ids:
+                    trade_time = pd.to_datetime(trade.trade_date_time, unit='ns', utc=True).tz_convert('Asia/Shanghai')
+                    logger.info(f"--- 交易成功通知 ---")
+                    logger.info(f"Trade时间:{trade_time}, 价格:{trade.price}, 数量:{trade.volume}, 方向:{trade.direction}")
+                    self.processed_trade_ids.add(trade_id)
 
     def _calc_annualized_basis(self, fut_price: float, spot_price: float, days: int) -> Optional[float]:
         if pd.isna(fut_price) or pd.isna(spot_price) or days <= 0 or spot_price <= 0:
@@ -157,21 +195,22 @@ class LocalICBasisRollerStrategy:
 
         return merged.sort_values('datetime')
 
-    def run(self):
-        df = self.load_data()
-        logger.info(f"Loaded {len(df)} records for backtest.")
+    def _process_new_bars(self, df: DataFrame):
+        if self.api.is_changing(self.futures_klines.iloc[-1], "datetime"):
+            latest = pd.to_datetime(self.futures_klines.iloc[-1]["datetime"], unit='ns', utc=True).tz_convert('Asia/Shanghai')
+            kline = df[df['datetime'] == latest].to_dict()
+            test_time = kline['datetime']
+            fut_close = kline['close']
+            idx_close = kline['close1']
+            expire_days = kline['expire_rest_days']
 
-        # Pre-calculate SMA for efficiency
-        df['index_sma'] = df['close1'].rolling(window=self.cfg.index_sma_period).mean()
+            symbol = kline['KQ.m@CFFEX.IC']
+            logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")
 
-        for i, row in df.iterrows():
-            test_time = row['datetime']
-            fut_close = row['close']
-            idx_close = row['close1']
-            expire_days = row['expire_rest_days']
-            index_sma = row['index_sma']
-            symbol = row['KQ.m@CFFEX.IC']
-
+            # Pre-calculate SMA for efficiency
+            # 选取历史k线做均线
+            klines_his = df[df['datetime'] < latest]
+            index_sma = klines_his['close1'].rolling(window=self.cfg.index_sma_period).mean()
             # 1. Handle Main Switch
             if symbol != self.last_symbol:
                 if self.last_symbol is not None:
@@ -189,7 +228,8 @@ class LocalICBasisRollerStrategy:
             ann_basis = self._calc_annualized_basis(fut_close, idx_close, expire_days)
             logger.info(f"{test_time}: {ann_basis}")
             # Dynamic Threshold (Percentile)
-            stats = get_ic_annualized_basis_percentile(current_ann_basis=ann_basis) if ann_basis is not None else {"current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
+            stats = get_ic_annualized_basis_percentile(current_ann_basis=ann_basis) if ann_basis is not None else {
+                "current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}
             basis_percentile = stats.get("current_percentile", 50)
             dynamic_threshold = stats.get("p75", self.cfg.annualized_basis_threshold)
 
@@ -206,7 +246,8 @@ class LocalICBasisRollerStrategy:
                 "index_close": idx_close,
                 "ann_basis": ann_basis,
                 "basis_percentile": basis_percentile,
-                "balance": self.balance + (self.pos_long * (fut_close - self.entry_price) * 200 if self.pos_long > 0 else 0),
+                "balance": self.balance + (
+                    self.pos_long * (fut_close - self.entry_price) * 200 if self.pos_long > 0 else 0),
                 "pos_long": self.pos_long,
                 "symbol": symbol
             })
@@ -215,49 +256,83 @@ class LocalICBasisRollerStrategy:
             if idx_close > 0:
                 self.vol_window.append(idx_close)
 
-        # Summary
-        results_df = pd.DataFrame(self.results_data)
-        # Update balance to reflect final close (if still holding)
-        if self.pos_long > 0:
-             final_fut_close = df.iloc[-1]['close']
-             self._close_position(final_fut_close, df.iloc[-1]['datetime'])
-             results_df.iloc[-1, results_df.columns.get_loc('balance')] = self.balance
+    def run(self):
+        self._init_api()
+        df = self.load_data()
+        logger.info(f"Loaded {len(df)} records for backtest.")
 
-        PerformanceAnalyzer.calculate_metrics(results_df, self.cfg, self.cfg.initial_balance)
 
-        output_file = self.current_dir / self.cfg.csv_file
-        results_df.to_csv(output_file, index=False)
-        logger.info(f"Results saved to {output_file}")
+        try:
+            while True:
+                self.api.wait_update()
+                self._handle_trades()
+                self._process_new_bars(df)
 
-    def _evaluate_and_execute(self, ann_basis, threshold, expire_days,
+        except BacktestFinished:
+            logger.info("\n回测完成，正在汇总数据...")
+            self._flush_data_to_disk(is_final=True)
+            # Summary
+            results_df = pd.DataFrame(self.results_data)
+            output_file = self.current_dir / self.cfg.csv_file
+            results_df.to_csv(output_file, index=False)
+            logger.info(f"Results saved to {output_file}")
+            if os.path.exists(self.cfg.csv_file):
+                final_df = pd.read_csv(self.cfg.csv_file)
+                PerformanceAnalyzer.calculate_metrics(final_df, self.cfg, self.api.get_account().balance)
+
+        except ConnectTimeout:
+            logger.exception("Network timeout during backtest.")
+        finally:
+            logger.info(f"运行时长：{(time.perf_counter() - start_time) / 60:.2f} 分")
+            if self.api:
+                self.api.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def _evaluate_and_execute(self, ann_basis, threshold, expire_days, position,
                               test_time, idx_close, fut_close, index_sma, basis_perc):
 
-        # Note: run_single might be slow for every bar. In ic_roller_backtest, it's called every bar.
-        # However, it returns short_ratio. Let's assume it's available.
-        # We'll skip it if it fails or returns None to match ic_roller_backtest behavior (where it just logs)
-
+        short_ratio = run_single(date=test_time.strftime('%Y-%m-%d'))
+        if short_ratio is None or not short_ratio:
+            logger.info(f"{test_time}:当天净空比不存在")
         # 1. Entry Logic
         if (ann_basis is not None and ann_basis > threshold and
-            expire_days > self.cfg.min_days_to_expiry_open and
-            self.pos_long == 0 and
-            idx_close > index_sma and not self.has_opened_in_current_main):
+                expire_days > self.cfg.min_days_to_expiry_open and
+                position.pos_long == 0 and test_time.date() > self.cfg.start_dt and
+                idx_close > index_sma and not self.has_opened_in_current_main):
 
             vol = self._get_vol_adjusted_volume()
-            logger.info(f"🚨【贴水报警】合约: {self.last_symbol} 时间: {test_time} | 年化贴水: {ann_basis:.2f}% | 动态阈值: {threshold:.2f}")
-            self._open_position(fut_close, vol, ann_basis, test_time)
+            logger.info(
+                f"🚨【贴水报警】合约: {self.current_underlying} 时间: {test_time} | 年化贴水: {ann_basis:.2f}% | 动态阈值: {threshold:.2f}")
+            self.target_pos_task.set_target_volume(vol)
             self.has_opened_in_current_main = True
+            self.entry_ann_basis = ann_basis
+            logger.info(f"✅ 已下达【买入 {vol} 手】指令")
 
         # 2. Profit Taking
-        elif self.pos_long > 0 and self.entry_ann_basis is not None:
-            repair_pct = (self.entry_ann_basis - ann_basis) / self.entry_ann_basis if self.entry_ann_basis != 0 else 0
+        elif position.pos_long > 0 and self.entry_ann_basis:
+            repair_pct = (self.entry_ann_basis - ann_basis) / self.entry_ann_basis
             if repair_pct >= self.cfg.profit_taking_basis_pct:
-                logger.info(f"💰【止盈平仓】合约: {self.last_symbol} 修复率: {repair_pct:.2%}")
-                self._close_position(fut_close, test_time)
+                logger.info(f"💰【止盈平仓】合约: {self.current_underlying} 修复率: {repair_pct:.2%}")
+                self.target_pos_task.set_target_volume(0)
+                self.has_opened_in_current_main = True
+                self.entry_ann_basis = None
 
         # 3. Expiry Close
-        elif expire_days <= self.cfg.max_days_to_expiry_close and self.pos_long > 0:
-            logger.info(f"⏰【临期平仓】合约: {self.last_symbol} 剩余天数: {expire_days}")
-            self._close_position(fut_close, test_time)
+        elif expire_days <= self.cfg.max_days_to_expiry_close and position.pos_long > 0:
+            logger.info(f"⏰【临期平仓】合约: {self.current_underlying} 剩余天数: {expire_days}")
+            self.target_pos_task.set_target_volume(0)
+            self.has_opened_in_current_main = True
 
     def _open_position(self, price, volume, ann_basis, dt):
         self.pos_long = volume

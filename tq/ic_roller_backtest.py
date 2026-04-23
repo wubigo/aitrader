@@ -25,7 +25,7 @@ class StrategyConfig:
     futures_symbol: str = "KQ.m@CFFEX.IC"
     index_symbol: str = "SSE.000905"
     duration: int = 60 * 60 * 24  # Daily K-line
-    data_length: int = 100
+    data_length: int = 10000
     initial_balance: float = 1_000_000.0
 
     # Entry/Exit Thresholds
@@ -132,6 +132,7 @@ class ICBasisRollerStrategy:
         self.futures_klines = None
         self.index_klines = None
         self.quote_main = None
+        self.trades = None
 
     def _init_api(self):
         token = os.getenv("TQ_ID")
@@ -146,6 +147,7 @@ class ICBasisRollerStrategy:
         quote = self.api.get_quote(self.cfg.futures_symbol)
         self.current_underlying = quote.underlying_symbol
         self.target_pos_task = TargetPosTask(self.api, self.current_underlying)
+        self.trades = self.api.get_trade()
 
         self.futures_klines = self.api.get_kline_serial(
             self.cfg.futures_symbol, self.cfg.duration,
@@ -164,14 +166,15 @@ class ICBasisRollerStrategy:
         return round(basis_ratio * 365 / days * 100, 3)
 
     def _handle_trades(self):
-        trades = self.api.get_trade()
-        for trade_id, trade in trades.items():
-            trade_symbol = f"{trade.exchange_id}.{trade.instrument_id}"
-            if trade_symbol == self.current_underlying and trade_id not in self.processed_trade_ids:
-                trade_time = pd.to_datetime(trade.trade_date_time, unit='ns', utc=True).tz_convert('Asia/Shanghai')
-                logger.info(f"--- 交易成功通知 ---")
-                logger.info(f"Trade时间:{trade_time}, 价格:{trade.price}, 数量:{trade.volume}, 方向:{trade.direction}")
-                self.processed_trade_ids.add(trade_id)
+        if self.api.is_changing(trades):
+            trades = self.api.get_trade()
+            for trade_id, trade in trades.items():
+                trade_symbol = f"{trade.exchange_id}.{trade.instrument_id}"
+                if trade_symbol == self.current_underlying and trade_id not in self.processed_trade_ids:
+                    trade_time = pd.to_datetime(trade.trade_date_time, unit='ns', utc=True).tz_convert('Asia/Shanghai')
+                    logger.info(f"--- 交易成功通知 ---")
+                    logger.info(f"Trade时间:{trade_time}, 价格:{trade.price}, 数量:{trade.volume}, 方向:{trade.direction}")
+                    self.processed_trade_ids.add(trade_id)
 
     def _handle_main_switch(self):
         if self.api.is_changing(self.quote_main, "underlying_symbol"):

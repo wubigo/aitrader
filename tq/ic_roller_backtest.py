@@ -263,7 +263,7 @@ class ICBasisRollerStrategy:
 
         short_ratio = run_single(date=test_time.strftime('%Y-%m-%d'))
         if short_ratio is None or not short_ratio:
-            logger.info(f"{test_time}日期当天净空比不存在")
+            logger.info(f"{test_time}:当天净空比不存在")
         # 1. Entry Logic
         if (ann_basis is not None and ann_basis > threshold and
             expire_days > self.cfg.min_days_to_expiry_open and

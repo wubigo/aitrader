@@ -210,7 +210,8 @@ class LocalICBasisRollerStrategy:
             # Pre-calculate SMA for efficiency
             # 选取历史k线做均线
             klines_his = df[df['datetime'] < latest]
-            index_sma = klines_his['close1'].rolling(window=self.cfg.index_sma_period).mean()
+            index_sma = klines_his['close1'].rolling(window=self.cfg.index_sma_period).mean().iloc[-1]
+
             # 1. Handle Main Switch
             if symbol != self.last_symbol:
                 if self.last_symbol is not None:

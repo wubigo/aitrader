@@ -114,6 +114,7 @@ class LocalICBasisRollerStrategy:
 
         # State Variables
         self.balance = self.cfg.initial_balance
+        self.current_underlying: str = ""
         self.pos_long = 0
         self.entry_price = 0.0
         self.entry_ann_basis = None
@@ -206,6 +207,7 @@ class LocalICBasisRollerStrategy:
             expire_days = kline['expire_rest_days']
 
             symbol = kline['KQ.m@CFFEX.IC']
+            self.current_underlying = symbol
             logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")
 
             # Pre-calculate SMA for efficiency

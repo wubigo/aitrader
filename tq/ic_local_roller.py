@@ -258,9 +258,9 @@ class LocalICBasisRollerStrategy:
 
     def run(self):
         self._init_api()
+        start_time = time.perf_counter()
         df = self.load_data()
         logger.info(f"Loaded {len(df)} records for backtest.")
-
 
         try:
             while True:

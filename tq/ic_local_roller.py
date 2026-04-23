@@ -11,7 +11,7 @@ from requests import ConnectTimeout
 import pandas as pd
 import numpy as np
 from pandas import DataFrame
-from tqsdk import TqApi, TqSim, TqBacktest, TqAuth, BacktestFinished
+from tqsdk import TqApi, TqSim, TqBacktest, TqAuth, BacktestFinished, TargetPosTask
 
 # --- Setup Logging ---
 # Assuming these exist in the environment as per ic_roller_backtest.py
@@ -207,7 +207,14 @@ class LocalICBasisRollerStrategy:
             expire_days = kline['expire_rest_days']
 
             symbol = kline['KQ.m@CFFEX.IC']
-            self.current_underlying = symbol
+
+            if symbol != self.current_underlying:
+                self.current_underlying = symbol
+                self.target_pos_task = TargetPosTask(self.api, self.current_underlying)
+                self.has_opened_in_current_main = False
+                logger.info(
+                    f"【主力切换】{self.current_underlying or '开始'} → {symbol} | 时间: {test_time}")
+
             logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")
 
             # Pre-calculate SMA for efficiency

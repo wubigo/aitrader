@@ -184,7 +184,7 @@ def fetch_cffex_positions(symbol: str = ["IC"], date: str = None) -> pd.DataFram
                 return pd.DataFrame(columns=["date", "symbol"])
 
             df = _normalize_columns(df_raw)
-            df.attrs["date"] = d
+            df.attrs["date"] = date
             df.attrs["symbol"] = symbol
             return df
     except Exception:

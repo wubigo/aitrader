@@ -219,7 +219,7 @@ class LocalICBasisRollerStrategy:
                 self.target_pos_task = TargetPosTask(self.api, symbol)
                 self.has_opened_in_current_main = False
             else:
-                logger.info(f"current_underlying={self.current_underlying}  symbol={symbol}")
+                logger.debug(f"current_underlying={self.current_underlying}  symbol={symbol}")
 
 
 

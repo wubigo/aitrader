@@ -283,6 +283,7 @@ class LocalICBasisRollerStrategy:
         end = df["datetime"].iloc[-1].date()
         logger.info(f"Loaded {len(df)} records for backtest.")
         self.cfg.end_dt = end
+        logger.info(f"回测区间:{self.cfg.start_dt}-{end}")
         self._init_api()
         start_time = time.perf_counter()
 

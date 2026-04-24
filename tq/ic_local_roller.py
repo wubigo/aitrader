@@ -206,9 +206,9 @@ class LocalICBasisRollerStrategy:
             fut_close = kline['close']
             idx_close = kline['close1']
             expire_days = kline['expire_rest_days']
-
             # symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
             symbol = kline['KQ.m@CFFEX.IC']
+
             if symbol is None or self.current_underlying is None:
                 logger.error(f"回测时间:{latest} 主力合约={symbol}  current_underlying={self.current_underlying}请准备好数据")
                 return

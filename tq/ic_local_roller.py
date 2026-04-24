@@ -126,6 +126,8 @@ class LocalICBasisRollerStrategy:
         # Windows
         self.vol_window = deque(maxlen=self.cfg.volatility_window)
         self.results_data = []
+        # 维护当前处理到本地数据的指针
+        self.df_idx = 0
 
     def _init_api(self):
         token = os.getenv("TQ_ID")
@@ -196,13 +198,24 @@ class LocalICBasisRollerStrategy:
         expire_df = expire_df[['date_str', 'expire_rest_days', 'KQ.m@CFFEX.IC']]
         merged = pd.merge(df, expire_df, on='date_str', how='left')
 
+        # 预计算SMA
+        merged['index_sma'] = merged['close1'].rolling(window=self.cfg.index_sma_period).mean()
+
         return merged.sort_values('datetime')
 
     def _process_new_bars(self, df: DataFrame):
         if self.api.is_changing(self.futures_klines.iloc[-1], "datetime"):
             latest = pd.to_datetime(self.futures_klines.iloc[-1]["datetime"], unit='ns', utc=True).tz_convert('Asia/Shanghai')
-            kline = df[df['datetime'] == latest].iloc[0]
+            if self.df_idx == 0 :
+                kline = df[df['datetime'] == latest].iloc[0]
+                self.df_idx = kline.index
+            else:
+                kline = df.iloc[self.df_idx]
+
             test_time = kline['datetime']
+            if test_time != latest:
+                logger.error("df index error, resolve to table scan")
+                kline = df[df['datetime'] == latest].iloc[0]
             fut_close = kline['close']
             idx_close = kline['close1']
             expire_days = kline['expire_rest_days']
@@ -212,7 +225,7 @@ class LocalICBasisRollerStrategy:
             if symbol is None or self.current_underlying is None:
                 logger.error(f"回测时间:{latest} 主力合约={symbol}  current_underlying={self.current_underlying}请准备好数据")
                 return
-            elif symbol != self.current_underlying:
+            elif symbol is not None and symbol != self.current_underlying:
                 logger.info(
                     f"【主力切换】{self.current_underlying or '开始'} → {symbol} | 时间: {test_time}")
                 self.current_underlying = symbol

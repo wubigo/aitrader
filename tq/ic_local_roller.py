@@ -207,8 +207,8 @@ class LocalICBasisRollerStrategy:
             idx_close = kline['close1']
             expire_days = kline['expire_rest_days']
 
-            symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
-
+            # symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
+            symbol = kline['KQ.m@CFFEX.IC']
             if symbol != self.current_underlying:
                 self.current_underlying = symbol
                 logger.info(f"current_underlying={self.current_underlying}  symbol={symbol}")

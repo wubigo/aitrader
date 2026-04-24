@@ -242,7 +242,6 @@ class LocalICBasisRollerStrategy:
 
             # 2. Calculate Features
             ann_basis = self._calc_annualized_basis(fut_close, idx_close, expire_days)
-            logger.info(f"{test_time}: {ann_basis}")
             # Dynamic Threshold (Percentile)
             stats = get_ic_annualized_basis_percentile(current_ann_basis=ann_basis) if ann_basis is not None else {
                 "current_percentile": 50, "p75": self.cfg.annualized_basis_threshold}

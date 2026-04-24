@@ -166,7 +166,7 @@ class ICBasisRollerStrategy:
         return round(basis_ratio * 365 / days * 100, 3)
 
     def _handle_trades(self):
-        if self.api.is_changing(trades):
+        if self.api.is_changing(self.trades):
             trades = self.api.get_trade()
             for trade_id, trade in trades.items():
                 trade_symbol = f"{trade.exchange_id}.{trade.instrument_id}"

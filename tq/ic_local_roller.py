@@ -206,12 +206,18 @@ class LocalICBasisRollerStrategy:
     def _process_new_bars(self, df: DataFrame):
         if self.api.is_changing(self.futures_klines.iloc[-1], "datetime"):
             latest = pd.to_datetime(self.futures_klines.iloc[-1]["datetime"], unit='ns', utc=True).tz_convert('Asia/Shanghai')
-            if self.df_idx == 0 :
-                kline = df[df['datetime'] == latest].iloc[0]
-                self.df_idx = kline.index
+            if self.df_idx == 0:
+                kline = df[df['datetime'] == latest]
+                self.df_idx = kline.index[0]
+                kline = kline.iloc[0]
             else:
                 kline = df.iloc[self.df_idx]
+            logger.info(f"df index to {self.df_idx}(Max={df.index[0]})")
 
+            self.df_idx = self.df_idx + 1
+            # if self.df_idx > df.index[0]:
+            #     logger.info("回测数据使用完毕，退出")
+            #     return
             test_time = kline['datetime']
             if test_time != latest:
                 logger.error("df index error, resolve to table scan")
@@ -234,18 +240,17 @@ class LocalICBasisRollerStrategy:
             else:
                 logger.debug(f"current_underlying={self.current_underlying} symbol={symbol}")
 
-
-
             logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")
 
             # Pre-calculate SMA for efficiency
             # 选取历史k线做均线
-            klines_his = df[df['datetime'] < latest]
-            sma_df = klines_his['close1'].rolling(window=self.cfg.index_sma_period).mean()
-            if not sma_df.empty:
-                index_sma = sma_df.iloc[-1]
-            else:
-                index_sma = 0
+            # klines_his = df[df['datetime'] < latest]
+            # sma_df = klines_his['close1'].rolling(window=self.cfg.index_sma_period).mean()
+            # if not sma_df.empty:
+            #     index_sma = sma_df.iloc[-1]
+            # else:
+            #     index_sma = 0
+            index_sma = kline['index_sma']
 
             # 1. Handle Main Switch
             if symbol != self.last_symbol:

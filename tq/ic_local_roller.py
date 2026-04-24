@@ -286,7 +286,7 @@ class LocalICBasisRollerStrategy:
 
         except BacktestFinished:
             logger.info("\n回测完成，正在汇总数据...")
-            self._flush_data_to_disk(is_final=True)
+
             # Summary
             results_df = pd.DataFrame(self.results_data)
             output_file = self.current_dir / self.cfg.csv_file

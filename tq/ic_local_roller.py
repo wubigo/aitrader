@@ -29,7 +29,7 @@ class StrategyConfig:
     index_symbol: str = "SSE.000905"
     duration: int = 60 * 60 * 24  # Daily K-line
     duration_minutes: int = 90
-    data_length: int = 10
+    data_length: int = 10000
     initial_balance: float = 10_000_000.0
 
     # Entry/Exit Thresholds
@@ -45,7 +45,7 @@ class StrategyConfig:
     default_trade_volume: int = 1
 
     # Backtest Period (Will be overridden by data range)
-    start_dt: date = date(2026, 4, 1)
+    start_dt: date = date(2018, 1, 1)
     end_dt: date = date.today()
 
     @property
@@ -209,14 +209,16 @@ class LocalICBasisRollerStrategy:
 
             # symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
             symbol = kline['KQ.m@CFFEX.IC']
-            if symbol != self.current_underlying:
+            if symbol is not None and symbol != self.current_underlying:
                 logger.info(
                     f"【主力切换】{self.current_underlying or '开始'} → {symbol} | 时间: {test_time}")
                 self.current_underlying = symbol
                 logger.info(f"current_underlying={self.current_underlying}  symbol={symbol}")
                 self.target_pos_task = TargetPosTask(self.api, symbol)
                 self.has_opened_in_current_main = False
-
+            else:
+                logger.error(f"回测时间:{latest} 主力合约{symbol}为空, 请准备好数据")
+                return
 
             logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")
 

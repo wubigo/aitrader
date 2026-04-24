@@ -228,17 +228,15 @@ class LocalICBasisRollerStrategy:
             # symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
             symbol = kline['KQ.m@CFFEX.IC']
 
-            if symbol is None or self.current_underlying is None:
-                logger.error(f"回测时间:{latest} 主力合约={symbol}  current_underlying={self.current_underlying}请准备好数据")
+            if pd.isna(symbol):
+                logger.error(f"回测时间:{latest} 主力合约={symbol}请准备好数据")
                 return
-            elif symbol is not None and symbol != self.current_underlying:
+            elif symbol != self.current_underlying:
                 logger.info(
                     f"【主力切换】{self.current_underlying or '开始'} → {symbol} | 时间: {test_time}")
                 self.current_underlying = symbol
                 self.target_pos_task = TargetPosTask(self.api, symbol)
                 self.has_opened_in_current_main = False
-            else:
-                logger.debug(f"current_underlying={self.current_underlying} symbol={symbol}")
 
             logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")
 

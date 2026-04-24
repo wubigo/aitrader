@@ -46,7 +46,7 @@ class StrategyConfig:
 
     # Backtest Period (Will be overridden by data range)
     start_dt: date = date(2018, 1, 1)
-    end_dt: date = date(2023, 1, 1)
+    end_dt: date = date.today()
 
     @property
     def csv_file(self) -> str:
@@ -273,10 +273,13 @@ class LocalICBasisRollerStrategy:
                 self.vol_window.append(idx_close)
 
     def run(self):
+        df = self.load_data().sort_values(by='datetime')
+        end = df["datetime"].iloc[-1].date()
+        logger.info(f"Loaded {len(df)} records for backtest.")
+        self.cfg.end_dt = end
         self._init_api()
         start_time = time.perf_counter()
-        df = self.load_data()
-        logger.info(f"Loaded {len(df)} records for backtest.")
+
 
         try:
             while True:

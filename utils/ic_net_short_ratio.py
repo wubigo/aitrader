@@ -388,19 +388,20 @@ def run_single_from_cache(symbol: str = "IC", date: str = None) -> dict:
     result = match.iloc[-1].to_dict()
 
     # 确保数值类型正确（从CSV读取后可能是numpy类型，转回原生Python类型以保持兼容性）
-    return {
-        "total_long": int(result["total_long"]),
-        "total_short": int(result["total_short"]),
-        "net_short": int(result["net_short"]),
-        "total_oi": int(result["total_oi"]),
-        "net_short_ratio": float(result["net_short_ratio"]),
-        "concentration_top5_short": float(result["concentration_top5_short"]),
-        "concentration_top5_long": float(result["concentration_top5_long"]),
-        "date": result["date"],
-        "symbol": result["symbol"],
-        "signal_level": result["signal_level"],
-        "signal_desc": interpret_signal(result["net_short_ratio"])[1]  # 重新获取描述
-    }
+    # return {
+    #     "total_long": int(result["total_long"]),
+    #     "total_short": int(result["total_short"]),
+    #     "net_short": int(result["net_short"]),
+    #     "total_oi": int(result["total_oi"]),
+    #     "net_short_ratio": float(result["net_short_ratio"]),
+    #     "concentration_top5_short": float(result["concentration_top5_short"]),
+    #     "concentration_top5_long": float(result["concentration_top5_long"]),
+    #     "date": result["date"],
+    #     "symbol": result["symbol"],
+    #     "signal_level": result["signal_level"],
+    #     "signal_desc": interpret_signal(result["net_short_ratio"])[1]  # 重新获取描述
+    # }
+    return float(result["net_short_ratio"])
 
 
 def run_single(symbol: str = "IC", date: str = None) -> dict:
@@ -425,7 +426,7 @@ def run_single(symbol: str = "IC", date: str = None) -> dict:
     level, desc = interpret_signal(result["net_short_ratio"])
     result["signal_level"] = level
     result["signal_desc"] = desc
-    return result
+    return result["net_short_ratio"]
 
 
 def save_report_to_csv(result_dict, file_path="ic_report_history.csv"):

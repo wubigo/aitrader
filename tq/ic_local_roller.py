@@ -198,8 +198,9 @@ class LocalICBasisRollerStrategy:
         expire_df = expire_df[['date_str', 'expire_rest_days', 'KQ.m@CFFEX.IC']]
         merged = pd.merge(df, expire_df, on='date_str', how='left')
 
-        # 预计算SMA
+        # 预计算SMA, 净空比
         merged['index_sma'] = merged['close1'].rolling(window=self.cfg.index_sma_period).mean()
+        merged['short_ratio'] = merged['datetime'].apply(lambda x: run_single(date=x.strftime('%Y-%m-%d')))
 
         return merged.sort_values('datetime')
 
@@ -230,6 +231,8 @@ class LocalICBasisRollerStrategy:
             expire_days = kline['expire_rest_days']
             # symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
             symbol = kline['KQ.m@CFFEX.IC']
+            short_ratio = kline['short_ratio']
+            logger.info(f"short_ratio={short_ratio}")
 
             if pd.isna(symbol):
                 logger.error(f"回测时间:{latest} 主力合约={symbol}请准备好数据")
@@ -278,7 +281,7 @@ class LocalICBasisRollerStrategy:
             # 3. Strategy Logic
             self._evaluate_and_execute(
                 ann_basis, dynamic_threshold, expire_days, position,
-                test_time, idx_close, fut_close, index_sma, basis_perc
+                test_time, idx_close, fut_close, index_sma, basis_perc, short_ratio
             )
 
             # 4. Record Data
@@ -303,6 +306,7 @@ class LocalICBasisRollerStrategy:
         logger.info(f"Loaded {len(df)} records for backtest.")
         self.cfg.end_dt = end
         logger.info(f"回测区间:{self.cfg.start_dt}-{end}")
+
         self._init_api()
         start_time = time.perf_counter()
 
@@ -332,10 +336,10 @@ class LocalICBasisRollerStrategy:
 
 
     def _evaluate_and_execute(self, ann_basis, threshold, expire_days, position,
-                              test_time, idx_close, fut_close, index_sma, basis_perc):
+                              test_time, idx_close, fut_close, index_sma, basis_perc, short_ratio):
 
-        short_ratio = run_single(date=test_time.strftime('%Y-%m-%d'))
-        if short_ratio is None or not short_ratio:
+        # short_ratio = run_single(date=test_time.strftime('%Y-%m-%d'))
+        if pd.isna(short_ratio) or not short_ratio:
             logger.info(f"{test_time}:当天净空比不存在")
         # 1. Entry Logic
         if (ann_basis is not None and ann_basis > threshold and

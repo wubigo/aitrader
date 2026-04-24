@@ -210,12 +210,13 @@ class LocalICBasisRollerStrategy:
             # symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
             symbol = kline['KQ.m@CFFEX.IC']
             if symbol != self.current_underlying:
+                logger.info(
+                    f"【主力切换】{self.current_underlying or '开始'} → {symbol} | 时间: {test_time}")
                 self.current_underlying = symbol
                 logger.info(f"current_underlying={self.current_underlying}  symbol={symbol}")
                 self.target_pos_task = TargetPosTask(self.api, self.current_underlying)
                 self.has_opened_in_current_main = False
-                logger.info(
-                    f"【主力切换】{self.current_underlying or '开始'} → {symbol} | 时间: {test_time}")
+
 
             logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")
 

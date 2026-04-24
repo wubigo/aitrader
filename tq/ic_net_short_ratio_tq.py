@@ -95,6 +95,34 @@ def print_report(df, symbol):
             level, _ = interpret_signal(row["ratio"])
             print(f"{date:<12} {int(row['long']):>10,} {int(row['short']):>10,} {int(row['net_short']):>+10,} {row['ratio']:>+9.2f}% {level}")
 
+def save_report_to_csv(result_dict, file_path="ic_report_history.csv"):
+    """
+    保存结果到CSV：若日期存在则更新，不存在则追加。
+    """
+    new_df = pd.DataFrame([result_dict])
+
+    if Path(file_path).exists():
+        old_df = pd.read_csv(file_path)
+        # 确保 date 是字符串格式以便比较
+        old_df['date'] = old_df['date'].astype(str)
+        new_df['date'] = new_df['date'].astype(str)
+
+        # 检查日期是否已存在
+        if result_dict['date'] in old_df['date'].values:
+            # 删除旧记录并合并新记录
+            old_df = old_df[old_df['date'] != result_dict['date']]
+            combined_df = pd.concat([old_df, new_df], ignore_index=True)
+        else:
+            # 直接追加
+            combined_df = pd.concat([old_df, new_df], ignore_index=True)
+    else:
+        combined_df = new_df
+
+    # 按日期排序后保存
+    combined_df.sort_values("date", inplace=True)
+    combined_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+    print(f"已更新数据至: {file_path}")
+
 def main():
     # 环境配置
     token = os.getenv("TQ_ID")
@@ -136,9 +164,19 @@ def main():
 
             # 计算
             result_df = calculate_net_short_ratio(long_ranking_df, short_ranking_df)
+            # 补充结果维度
+            result_df['date'] = dt
+            result_df['symbol'] = underlying_symbol
+            level, desc = interpret_signal(result_df["net_short_ratio"])
+            result_df['signal_level'] = level
+
+            # 3. 打印并保存
+            print_report(result_df, trade_info, dt, underlying_symbol)
+            save_report_to_csv(result, file_path=report_file)
 
             # 输出
             print_report(result_df, symbol)
+
 
         api.close()
 

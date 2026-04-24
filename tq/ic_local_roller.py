@@ -356,13 +356,13 @@ class LocalICBasisRollerStrategy:
             logger.info(f"✅ 已下达【买入 {vol} 手】指令")
 
         # 2. Profit Taking
-        elif position.pos_long > 0 and self.entry_ann_basis:
-            repair_pct = (self.entry_ann_basis - ann_basis) / self.entry_ann_basis
-            if repair_pct >= self.cfg.profit_taking_basis_pct:
-                logger.info(f"💰【止盈平仓】合约: {self.current_underlying} 修复率: {repair_pct:.2%}")
-                self.target_pos_task.set_target_volume(0)
-                self.has_opened_in_current_main = True
-                self.entry_ann_basis = None
+        # elif position.pos_long > 0 and self.entry_ann_basis:
+        #     repair_pct = (self.entry_ann_basis - ann_basis) / self.entry_ann_basis
+        #     if repair_pct >= self.cfg.profit_taking_basis_pct:
+        #         logger.info(f"💰【止盈平仓】合约: {self.current_underlying} 修复率: {repair_pct:.2%}")
+        #         self.target_pos_task.set_target_volume(0)
+        #         self.has_opened_in_current_main = True
+        #         self.entry_ann_basis = None
 
         # 3. Expiry Close
         elif expire_days <= self.cfg.max_days_to_expiry_close and position.pos_long > 0:

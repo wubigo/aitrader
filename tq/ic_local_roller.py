@@ -30,7 +30,7 @@ class StrategyConfig:
     duration: int = 60 * 60 * 24  # Daily K-line
     duration_minutes: int = 90
     data_length: int = 10000
-    initial_balance: float = 1_000_000.0
+    initial_balance: float = 10_000_000.0
 
     # Entry/Exit Thresholds
     annualized_basis_threshold: float = 8.0

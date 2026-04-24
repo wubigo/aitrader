@@ -217,7 +217,7 @@ class LocalICBasisRollerStrategy:
                 self.target_pos_task = TargetPosTask(self.api, symbol)
                 self.has_opened_in_current_main = False
             else:
-                logger.error(f"回测时间:{latest} 主力合约{symbol}为空, 请准备好数据")
+                logger.error(f"回测时间:{latest} 主力合约{symbol}为空,  current_underlying:{self.current_underlying} 请准备好数据")
                 return
 
             logger.info(f"{latest} ICO({symbol}):close={fut_close} CS500:close={idx_close}")

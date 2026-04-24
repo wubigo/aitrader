@@ -212,16 +212,19 @@ class LocalICBasisRollerStrategy:
                 kline = kline.iloc[0]
             else:
                 kline = df.iloc[self.df_idx]
+            test_time = kline['datetime']
+            if test_time != latest:
+                logger.error("df index out of order, resolve to table scan")
+                kline = df[df['datetime'] == latest].iloc[0]
+                self.df_idx = kline.index[0]
+                kline = kline.iloc[0]
             logger.info(f"df index to {self.df_idx}(Max={df.index[0]})")
 
             self.df_idx = self.df_idx + 1
             # if self.df_idx > df.index[0]:
             #     logger.info("回测数据使用完毕，退出")
             #     return
-            test_time = kline['datetime']
-            if test_time != latest:
-                logger.error("df index error, resolve to table scan")
-                kline = df[df['datetime'] == latest].iloc[0]
+
             fut_close = kline['close']
             idx_close = kline['close1']
             expire_days = kline['expire_rest_days']

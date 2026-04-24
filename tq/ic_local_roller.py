@@ -29,7 +29,7 @@ class StrategyConfig:
     index_symbol: str = "SSE.000905"
     duration: int = 60 * 60 * 24  # Daily K-line
     duration_minutes: int = 90
-    data_length: int = 10000
+    data_length: int = 10
     initial_balance: float = 10_000_000.0
 
     # Entry/Exit Thresholds
@@ -45,7 +45,7 @@ class StrategyConfig:
     default_trade_volume: int = 1
 
     # Backtest Period (Will be overridden by data range)
-    start_dt: date = date(2018, 1, 1)
+    start_dt: date = date(2026, 4, 1)
     end_dt: date = date.today()
 
     @property
@@ -207,10 +207,11 @@ class LocalICBasisRollerStrategy:
             idx_close = kline['close1']
             expire_days = kline['expire_rest_days']
 
-            symbol = kline['KQ.m@CFFEX.IC']
+            symbol = kline['KQ.m@CFFEX.IC'].removeprefix('CFFEX.')
 
             if symbol != self.current_underlying:
                 self.current_underlying = symbol
+                logger.info(f"current_underlying={self.current_underlying}  symbol={symbol}")
                 self.target_pos_task = TargetPosTask(self.api, self.current_underlying)
                 self.has_opened_in_current_main = False
                 logger.info(
@@ -291,12 +292,10 @@ class LocalICBasisRollerStrategy:
 
             # Summary
             results_df = pd.DataFrame(self.results_data)
+            PerformanceAnalyzer.calculate_metrics(df=results_df, initial_balance=self.cfg.initial_balance)
             output_file = self.current_dir / self.cfg.csv_file
             results_df.to_csv(output_file, index=False)
             logger.info(f"Results saved to {output_file}")
-            if os.path.exists(self.cfg.csv_file):
-                final_df = pd.read_csv(self.cfg.csv_file)
-                PerformanceAnalyzer.calculate_metrics(final_df, self.cfg, self.api.get_account().balance)
 
         except ConnectTimeout:
             logger.exception("Network timeout during backtest.")

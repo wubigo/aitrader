@@ -119,7 +119,6 @@ class LocalICBasisRollerStrategy:
         self.entry_price = 0.0
         self.entry_ann_basis = None
         self.has_opened_in_current_main = False
-        self.last_symbol = None
         self.trades = None
         self.processed_trade_ids: Set[str] = set()
 
@@ -213,6 +212,7 @@ class LocalICBasisRollerStrategy:
                 kline = kline.iloc[0]
             else:
                 kline = df.iloc[self.df_idx]
+
             test_time = kline['datetime']
             if test_time != latest:
                 logger.error("df index out of order, resolve to table scan")
@@ -220,7 +220,6 @@ class LocalICBasisRollerStrategy:
                 self.df_idx = kline.index[0]
                 kline = kline.iloc[0]
             logger.info(f"df index to {self.df_idx}(Max={df.index[0]})")
-
             self.df_idx = self.df_idx + 1
             # if self.df_idx > df.index[0]:
             #     logger.info("回测数据使用完毕，退出")
@@ -256,19 +255,6 @@ class LocalICBasisRollerStrategy:
             #     index_sma = 0
             index_sma = kline['index_sma']
 
-            # 1. Handle Main Switch
-            if symbol != self.last_symbol:
-                if self.last_symbol is not None:
-                    logger.info(f"【主力切换】{self.last_symbol} → {symbol} | 时间: {test_time}")
-                    # If we have a position, we should roll it or close it?
-                    # The Tq strategy closes and sets has_opened_in_current_main = False
-                    if self.pos_long > 0:
-                        logger.info(f"⏰【换月平仓】合约: {self.last_symbol}")
-                        self._close_position(fut_close, test_time)
-
-                self.last_symbol = symbol
-                self.has_opened_in_current_main = False
-
             # 2. Calculate Features
             ann_basis = self._calc_annualized_basis(fut_close, idx_close, expire_days)
             # Dynamic Threshold (Percentile)
@@ -301,15 +287,15 @@ class LocalICBasisRollerStrategy:
                 self.vol_window.append(idx_close)
 
     def run(self):
-        df = self.load_data().sort_values(by='datetime')
+        df = self.load_data()
         end = df["datetime"].iloc[-1].date()
         logger.info(f"Loaded {len(df)} records for backtest.")
         self.cfg.end_dt = end
         logger.info(f"回测区间:{self.cfg.start_dt}-{end}")
 
         self._init_api()
+        df.set_index("id")
         start_time = time.perf_counter()
-
 
         try:
             while True:
@@ -329,6 +315,8 @@ class LocalICBasisRollerStrategy:
 
         except ConnectTimeout:
             logger.exception("Network timeout during backtest.")
+        except Exception:
+            logger.exception("run error")
         finally:
             logger.info(f"运行时长：{(time.perf_counter() - start_time) / 60:.2f} 分")
             if self.api:

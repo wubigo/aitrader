@@ -56,7 +56,7 @@ class PerformanceAnalyzer:
     """Helper class to calculate and log strategy performance."""
 
     @staticmethod
-    def calculate_metrics(df: pd.DataFrame, config: StrategyConfig, initial_balance: float):
+    def calculate_metrics(df: pd.DataFrame, initial_balance: float):
         if df.empty or "balance" not in df.columns:
             logger.info("No balance data available for performance analysis.")
             return
@@ -262,9 +262,8 @@ class LocalICBasisRollerStrategy:
                 "index_close": idx_close,
                 "ann_basis": ann_basis,
                 "basis_percentile": basis_perc,
-                "balance": self.balance + (
-                    self.pos_long * (fut_close - self.entry_price) * 200 if self.pos_long > 0 else 0),
-                "pos_long": self.pos_long,
+                "balance": self.api.get_account().balance,
+                "pos_long": self.api.get_position(symbol).pos_long,
                 "symbol": symbol
             })
 

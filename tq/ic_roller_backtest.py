@@ -43,7 +43,7 @@ class StrategyConfig:
 
     # Backtest Period
     start_dt: date = date(2018, 1, 1)
-    end_dt: date = date(2023, 1, 1)
+    end_dt: date = date(2026, 4, 24)
 
     # System Config
     chunk_size: int = 5000

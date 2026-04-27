@@ -284,7 +284,7 @@ class ICBasisRollerStrategy:
         elif position.pos_long > 0 and self.entry_ann_basis:
             repair_pct = (self.entry_ann_basis - ann_basis) / self.entry_ann_basis
             if repair_pct >= self.cfg.profit_taking_basis_pct:
-                logger.info(f"💰【止盈平仓】合约: {self.current_underlying} 修复率: {repair_pct:.2%}")
+                logger.info(f"💰【止盈平仓】合约: {self.current_underlying} 修复率: {repair_pct:.2%} 当天贴水收益率:{ann_basis}")
                 self.target_pos_task.set_target_volume(0)
                 self.has_opened_in_current_main = True
                 self.entry_ann_basis = None

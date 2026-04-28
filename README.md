@@ -14,6 +14,9 @@ $tokens_per_sec = 256 / ((Get-Date) - $start).TotalSeconds
 Write-Output "性能: $tokens_per_sec t/s"
 ```
 
+# RAG 增强 → 动态知识注入
+
+用向量数据库存储IC/IM历史贴水事件库（如 2015 年、2022 年极端贴水事件）
 
 
 ***推理硬件需求*** (units = total memory: RAM + VRAM, or unified memory)

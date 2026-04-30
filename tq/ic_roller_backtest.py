@@ -962,12 +962,12 @@ if __name__ == "__main__":
             "name": "IC (中证500)",
             "dividend_rate": 1.0,   # 中证500年化分红率约1%
         },
-        {
-            "futures": "KQ.m@CFFEX.IM",
-            "index": "SSE.000852",
-            "name": "IM (中证1000)",
-            "dividend_rate": 0.8,   # 中证1000年化分红率约0.8%
-        },
+        # {
+        #     "futures": "KQ.m@CFFEX.IM",
+        #     "index": "SSE.000852",
+        #     "name": "IM (中证1000)",
+        #     "dividend_rate": 0.8,   # 中证1000年化分红率约0.8%
+        # },
     ]
 
     for target in targets:

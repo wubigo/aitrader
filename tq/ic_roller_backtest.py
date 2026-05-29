@@ -94,7 +94,7 @@ class StrategyConfig:
 
     # --- 回测周期 ---
     start_dt: date = date(2018, 1, 1)
-    end_dt: date = date(2026, 4, 24)
+    end_dt: date = date.today()
 
     # --- 系统配置 ---
     chunk_size: int = 5000

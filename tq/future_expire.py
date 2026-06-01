@@ -67,7 +67,7 @@ fut_symbol = "KQ.m@CFFEX.IC"
 kline_df = api.get_kline_serial([fut_symbol], duration_seconds=86400, data_length=KLINE_LEN)
 quote = api.get_quote(fut_symbol)
 
-current_underlying = None
+current_underlying = quote.underlying_symbol
 record_list = []
 
 try:

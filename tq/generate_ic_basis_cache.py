@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).resolve().parent
 CHUNK_SIZE = 5000
-KLINE_LEN = 5000
+
 HIS_DAYS = 34
 
 
@@ -43,6 +43,7 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
     cache_file = current_dir / cache_file_name
     logger.info(f"开始生成 {fut_symbol} (vs {idx_symbol}) 的年化贴水缓存...")
 
+    kline_len = 5000
     if end is not None:
         end_dt = date.fromisoformat(end)
     else:
@@ -53,6 +54,10 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
         start_dt = end_dt - timedelta(days=HIS_DAYS)
     else:
         start_dt = date.fromisoformat(start)
+        # 【新增条件】计算 start_dt 和 end_dt 之间间隔的天数并重置 KLINE_LEN
+        delta_days = (end_dt - start_dt).days
+        # 避免天数为 0 或负数导致 TqSdk 报错，至少保持 10 条（或根据策略需要给个安全垫 +5 天）
+        kline_len = max(delta_days + 5, 10)
 
 
 
@@ -66,8 +71,8 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
         auth=TqAuth(token, pa)
     )
 
-    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=KLINE_LEN)
-    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=KLINE_LEN)
+    fut_klines = api.get_kline_serial(fut_symbol, 86400, data_length=kline_len)
+    idx_klines = api.get_kline_serial(idx_symbol, 86400, data_length=kline_len)
     quote = api.get_quote(fut_symbol)
     current_underlying = quote.underlying_symbol
 
@@ -90,7 +95,7 @@ def generate_basis_cache(fut_symbol: str, idx_symbol: str, cache_file_name: str,
                     dt_nano = row["datetime"]
                     dt = pd.to_datetime(dt_nano, unit='ns')
                     fut_close = row["close"]
-
+                    logger.debug(dt)
                     idx_match = idx_klines[idx_klines["datetime"] == dt_nano]
                     if idx_match.empty:
                         continue
@@ -193,8 +198,17 @@ if __name__ == "__main__":
         {"fut": "KQ.m@CFFEX.IC", "idx": "SSE.000905", "file": data_file},
 
     ]
+    start = None
     if os.path.exists(data_file):
+        # 1. 读取csv文件，并使用 parse_dates 参数将 'datetime' 列解析为时间戳格式
+        df = pd.read_csv(data_file, parse_dates=['datetime'])
+        # 2. 使用 .dt.date 提取年月日部分，然后获取最大值
+        max_date = df['datetime'].dt.date.max()
+        # 3. 打印结果
+        start = str(max_date)
+        print(f"历史datetime的最大年月日是: {start}")
         os.rename(data_file, f"{data_file}-{date.today()}")
+
 
     start_time = time.perf_counter()
     for task in tasks:
@@ -203,7 +217,8 @@ if __name__ == "__main__":
         generate_basis_cache(
             fut_symbol=task["fut"],
             idx_symbol=task["idx"],
-            cache_file_name=task["file"]
+            cache_file_name=task["file"],
+            start=start
         )
 
     # 打印简单统计

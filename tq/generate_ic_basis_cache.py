@@ -34,7 +34,11 @@ def _flush_records(records: List[Dict], cache_file: Path):
     chunk_df = pd.DataFrame(records)
     # 第一次写入需带 header，后续追加不带 header
     is_first_write = not cache_file.exists()
-    chunk_df.to_csv(cache_file, mode='a', index=False, header=is_first_write)
+    if is_first_write:
+        chunk_df.to_csv(cache_file, mode='w', index=False, header=is_first_write)
+    else:
+        logger.info("追加记录...")
+        chunk_df.to_csv(cache_file, mode='a', index=False, header=is_first_write)
     logger.info(f"💾 已同步 {len(records)} 行数据至磁盘: {cache_file.name}")
 
 

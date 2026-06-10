@@ -211,8 +211,6 @@ if __name__ == "__main__":
         # 3. 打印结果
         start = str(max_date)
         print(f"历史datetime的最大年月日是: {start}")
-        os.rename(data_file, f"{data_file}-{date.today()}")
-
 
     start_time = time.perf_counter()
     for task in tasks:

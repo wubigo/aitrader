@@ -32,7 +32,7 @@ quote = api.get_quote(symbol)
 print("最新价：", quote.last_price)
 print("成交量：", quote.volume)
 
-csv_file_path = current_dir / "date-ic-all.csv"
+csv_file_path = f"{current_dir}/date-ic-all.csv"
 
 d = api.query_his_cont_quotes(['KQ.m@CFFEX.IC'], n=2705)
 

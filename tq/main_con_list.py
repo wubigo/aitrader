@@ -1,8 +1,12 @@
 import os
 from datetime import date
+from pathlib import Path
 
 from tqsdk import TqApi, TqAuth
 from utils.backtest_logger import backup_dataframe
+
+
+current_dir = Path(__file__).resolve().parent
 
 # 从环境变量获取账号密码
 token = os.getenv("TQ_ID")
@@ -28,9 +32,11 @@ quote = api.get_quote(symbol)
 print("最新价：", quote.last_price)
 print("成交量：", quote.volume)
 
-d = api.query_his_cont_quotes(['KQ.m@CFFEX.IC'], n=300)
+csv_file_path = current_dir / "future_expires.csv"
 
-d.to_csv('./date-ic-all.csv', index=False)
+d = api.query_his_cont_quotes(['KQ.m@CFFEX.IC'], n=2705)
+
+d.to_csv(csv_file_path, index=False)
 
 
 

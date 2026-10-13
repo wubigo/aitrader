@@ -218,7 +218,12 @@ df_processed = processor.standardize(df_processed, cols)
 signal = MomentumSignal.generate_signals(df_processed, 'momentum_60d')
 ```
 
-## 期指滚贴水策略 
+## 期指滚贴水策略
+
+IC长期贴水的根本原因：
+A股市场量化基金、雪球产品、融券套利大量以IC空头对冲α策略，
+导致空头持续供给过剩，期货价格系统性低于现货（基差为负）。
+每次滚仓换月时，空头需补缴"贴水成本"，多头则获得基差收敛收益
 
 Stock index futures rolling discount arbitrage is a market-neutral strategy that
 exploits mispricing between the current spot index and futures contracts, specifically
